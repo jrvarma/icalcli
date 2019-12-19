@@ -56,3 +56,4 @@ By default, `icalcli` runs interactively as an REPL (Read Evaluate Print Loop). 
 
 In the beginning, `icalcli` executes a configuration script (located, by default, at `~/.icalcli.py`) which must define the variable `backend_interface` representing the backend interface initialized with the right authentication credentials to access the backend calendar. 
 
+The file `example_.icalcli.py` in the `etesync` folder contains a sample `.icalcli.py` for the `etesync` backend.
