@@ -121,6 +121,11 @@ class IcalendarInterface:
             return dt.astimezone(tzlocal())
 
     @staticmethod
+    def _confirm(prompt):
+        response = input(prompt)
+        return (response and response[0].lower() == 'y')
+    
+    @staticmethod
     def _calendar_timezone(dt):
         r"""Convert datetime to default timezone of calendar
 
@@ -291,6 +296,7 @@ class IcalendarInterface:
         to_show_now = True
         if self.now < start_dt or self.now > end_dt:
             to_show_now = False
+        now_daynum = self._cal_monday(int(self.now.strftime("%w")))
 
         for event in event_list:
             event_daynum = self._cal_monday(int(self.decode_dtm(
@@ -329,18 +335,18 @@ class IcalendarInterface:
                         # line marker is during event (recolor event)
                         force_now_marker = True
                         to_show_now = False
-                    elif (int(days_since_epoch(self.now)) <
-                          int(days_since_epoch(event_start_date))):
-                        force_now_marker = False
-                        week_events[event_daynum - 1].append(
-                            EventTitle(
-                                '\n' + self.options['cal_width'] * '-',
-                                self.options['color_now_marker']))
-                        to_show_now = False
+                    # elif (int(days_since_epoch(self.now)) <
+                    #       int(days_since_epoch(event_start_date))):
+                    #     force_now_marker = False
+                    #     week_events[event_daynum - 1].append(
+                    #         EventTitle(
+                    #             '\n' + self.options['cal_width'] * '-',
+                    #             self.options['color_now_marker']))
+                    #     to_show_now = False
                     elif self.now <= event_start_date:
-                        # add a line marker before next event
+                        # add a line marker at end of today
                         force_now_marker = False
-                        week_events[event_daynum].append(
+                        week_events[now_daynum].append(
                             EventTitle(
                                 '\n' + self.options['cal_width'] * '-',
                                 self.options['color_now_marker']))
@@ -1043,7 +1049,7 @@ class IcalendarInterface:
     def sync(self):
         r"""Sync calendar
         """
-        self.backend_interface.sync()
+        self.backend_interface.sync(self.vtimezone)
         self.backend_cache_dirty = False
 
     def delete(self, search_text='', start=None, end=None,
@@ -1079,8 +1085,7 @@ class IcalendarInterface:
         for event in event_list:
             self._iterate_events(None, [event])
             if prompt:
-                response = input("Delete y/n? ")
-                if not (response and response[0].lower() == 'y'):
+                if not IcalendarInterface._confirm("Delete y/n? "):
                     self.printer.msg("Action cancelled\n")
                     return
             self.backend_interface.delete_event(
@@ -1109,15 +1114,15 @@ class IcalendarInterface:
             self.printer.msg("%d events found" % nevents)
             for event in event_list:
                 self._iterate_events(None, [event])
-            response = input("Do you want to edit all y/n? ")
-            if not (response and response[0].lower() == 'y'):
+            if not IcalendarInterface._confirm(
+                    "Do you want to edit all y/n? "):
                 self.printer.msg("Action cancelled\n")
                 return
         for event in event_list:
             self._iterate_events(None, [event])
             self.printer.msg(event.to_ical().decode() + '\n')
             while True:
-                s = input("Enter updated event outputs as if"
+                s = input("Enter updated event outputs as if "
                           + "adding new event\n")
                 try:
                     args = self.add_parser.parse_args(shlex.split(s))
@@ -1167,9 +1172,11 @@ class IcalendarInterface:
             # old_duration = None
             if not args.summary:
                 raise Exception('Summary must be specified')
-            day = args.day or old_start.day
+            day = args.day or self.now.day
             month = args.month or self.now.month + (
                 1 if day < self.now.day and not args.year else 0)
+            if not args.month and month == 13:
+                month = 1
             year = args.year or self.now.year + (
                 1 if month < self.now.month else 0)
         if args.allday:
@@ -1255,16 +1262,15 @@ class IcalendarInterface:
             self.printer.msg("New Event Details\n")
             self.printer.msg(event.to_ical().decode())
             self._iterate_events(None, [event])
-            response = input("Proceed y/n? ")
-            if not (response and response[0].lower() == 'y'):
+            if not IcalendarInterface._confirm("Proceed y/n? "):
                 self.printer.msg("Action cancelled\n")
                 return
         self.printer.msg("%s event\n" % ("Updating" if old
                                          else "adding"))
         if old:
-            self.backend_interface.update_event(event)
+            self.backend_interface.update_event(event, self.vtimezone)
         else:
-            self.backend_interface.create_event(event)
+            self.backend_interface.create_event(event, self.vtimezone)
         self.printer.msg("Event %s\n" % ("updated" if old
                                          else "added"))
         self._iterate_events(None, [event])
@@ -1339,17 +1345,29 @@ def repl(ecal=None):
             add_parser=get_add_parser(),
             backend_interface=config.backend_interface,
             printer=printer, **vars(FLAGS))
-        if hasattr(config, 'timezones'):
+        if hasattr(config, 'timezones') and 'tz' in config.timezones:
             IcalendarInterface.calendar_tz = config.timezones['tz']
         else:
             IcalendarInterface.calendar_tz = UTC
+        if hasattr(config, 'timezones') and 'vtimezone' in config.timezones:
+            IcalendarInterface.vtimezone = config.timezones['vtimezone']
+        else:
+            IcalendarInterface.vtimezone = None
         ecal.interactive = FLAGS.interactive
+        ecal.no_auto_sync = False
 
     if FLAGS.locale:
         try:
             utils.set_locale(FLAGS.locale)
         except ValueError as exc:
             ecal.printer.err_msg(str(exc)+'\n')
+
+    # The no_auto_sync option is available only for editing commands
+    # If an edit is done with no_auto_sync and this is followed by a viewing
+    # command, we must "remember" the no_auto_sync. So we store it in ecal.
+    # If a quit command is given, we cannot auto-sync, but must prompt for sync.
+    if "no_auto_sync" in FLAGS:
+        ecal.no_auto_sync = FLAGS.no_auto_sync
 
     try:
         if FLAGS.command in ['g', 'agenda']:
@@ -1384,16 +1402,18 @@ def repl(ecal=None):
                         field='uid' if FLAGS.uid else 'summary')
 
         elif FLAGS.command in ['q', 'quit']:
-            ecal.interactive = False
-
-        # elif FLAGS.command in ['i', 'interactive']:
-        #     pass
+            if(ecal.backend_cache_dirty and ecal.no_auto_sync
+               and not IcalendarInterface._confirm(
+                   "Changes made in calendar not yet synced. Quit y/n? ")):
+                pass
+            else:
+                ecal.interactive = False
 
     except Exception as exc:
         ecal.printer.err_msg(str(exc)+'\n')
         return ecal if ecal.interactive else None
 
-    if ecal.backend_cache_dirty and not FLAGS.no_auto_sync:
+    if ecal.backend_cache_dirty and not ecal.no_auto_sync:
         ecal.printer.msg("Syncing changes made in calendar\n")
         ecal.sync()
     if ecal.backend_cache_dirty:

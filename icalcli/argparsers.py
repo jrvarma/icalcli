@@ -177,7 +177,7 @@ def get_argument_parser():
         default=stdout.isatty(), dest="color",
         help="Enable/Disable all color output")
     parser.add_argument(
-        "--lineart", default="fancy",
+        "--lineart", default="unicode",
         choices=["fancy", "unicode", "ascii"],
         help="Choose line art style for calendars: \"fancy\": for" +
         "VTcodes, \"unicode\" for Unicode box drawing characters," +

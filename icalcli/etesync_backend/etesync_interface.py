@@ -1,4 +1,4 @@
-from etesync_crud import EtesyncCRUD
+from icalcli.etesync_backend.etesync_crud import EtesyncCRUD
 from icalendar import Calendar
 
 
@@ -54,17 +54,17 @@ class EtesyncInterface (EtesyncCRUD):
         self.events = [Calendar.from_ical(ev).walk('VEVENT')[0]
                        for ev in EtesyncCRUD.all_events(self)]
 
-    def create_event(self, event):
+    def create_event(self, event, vtimezone=None):
         r"""Create event
 
         Parameters
         ----------
         event : event to be added (iCalendar object)
         """
-        ics = self.event_to_ics(event)
+        ics = self.event_to_ics(event, vtimezone)
         EtesyncCRUD.create_event(self, ics)
 
-    def update_event(self, event):
+    def update_event(self, event, vtimezone=None):
         r"""Update event
 
         Parameters
@@ -72,10 +72,10 @@ class EtesyncInterface (EtesyncCRUD):
         event : event to be added (iCalendar object)
         """
         uid = event.decoded('uid').decode()
-        ics = self.event_to_ics(event)
+        ics = self.event_to_ics(event, vtimezone)
         EtesyncCRUD.update_event(self, ics, uid)
 
-    def event_to_ics(self, event):
+    def event_to_ics(self, event, vtimezone=None):
         r"""Make calendar string (ics) from event
 
         Parameters
@@ -84,14 +84,12 @@ class EtesyncInterface (EtesyncCRUD):
         """
         cal = Calendar()
         cal.add_component(event)
-        try:
-            cal.add_component(timezones['vtimezone'])
-        except NameError:
-            pass
+        if vtimezone:
+            cal.add_component(vtimezone)
         ics = cal.to_ical().decode()
         return ics
 
-    def sync(self):
+    def sync(self, vtimezone=None):
         r"""Sync with server and rebuild vevent list
         """
         EtesyncCRUD.sync(self)
