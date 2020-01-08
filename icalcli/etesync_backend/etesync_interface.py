@@ -34,7 +34,7 @@ from icalendar import Calendar
 
 class EtesyncInterface (EtesyncCRUD):
     def __init__(self, email, userPassword, remoteUrl, uid, authToken,
-                 cipher_key=None):
+                 cipher_key=None, silent=True):
         r"""Initialize EtesyncInterface
 
         Parameters
@@ -47,7 +47,7 @@ class EtesyncInterface (EtesyncCRUD):
         """
         super(EtesyncInterface, self).__init__(
             email, userPassword, remoteUrl,
-            uid, authToken, cipher_key)
+            uid, authToken, cipher_key, silent)
         self.all_events()
 
     def all_events(self):

@@ -1,20 +1,24 @@
 #!/usr/bin/env python
-from setuptools import setup
+from setuptools import setup  #, find_packages
+
+with open("README.md", "r") as fh:
+    long_description = fh.read()
 
 setup(name='icalcli',
-      version='0.9',
+      version='0.9.1',
       maintainer='Jayanth R. Varma',
       maintainer_email='jrvarma@gmail.com',
       description='Icalendar Calendar Command Line Interface',
-      long_description='',
-      packages=['icalcli'],
+      long_description=long_description,
+      long_description_content_type="text/markdown",
+      url="https://github.com/jrvarma/icalcli",
+      packages=['icalcli', 'icalcli.etesync_backend', 'icalcli.file_backend'],
       install_requires=[
           'python-dateutil',
           'parsedatetime',
           'icalendar'
       ],
       extras_require={
-          'vobject': ["vobject"],
           'parsedatetime': ["parsedatetime"],
       },
       entry_points={
@@ -27,4 +31,6 @@ setup(name='icalcli',
           "Intended Audience :: End Users/Desktop",
           "License :: OSI Approved :: MIT License",
           "Programming Language :: Python :: 3",
-      ])
+      ],
+      python_requires='>=3.0',
+)
