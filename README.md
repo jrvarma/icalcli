@@ -87,7 +87,6 @@ backend_interface = EtesyncInterface(
     c['uid'], c['authToken'],
     base64.decodebytes(c['cipher_key'].encode('ascii')))
 ```
-Please see [the answer to Issue 1](https://github.com/jrvarma/icalcli/issues/1#issuecomment-640238711) for details on how to get the `uid` and `authToken`.
 
 ## Screenshots
 

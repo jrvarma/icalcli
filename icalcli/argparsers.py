@@ -140,6 +140,8 @@ def fill_add_parser(add):
                         help='Remove all alarms')
     add.add_argument('-f', '--free', action='store_true',
                      help='Show as free')
+    add.add_argument('-b', '--busy', action='store_true',
+                     help='Show as busy')
     add.add_argument('-s', '--start', help='Start date/time (ISO format)')
     add.add_argument('-e', '--end', help='End date/time (ISO format)')
     add.add_argument('-S', '--summary', help='Event Summary')

@@ -164,7 +164,7 @@ class IcalendarInterface:
         else:
             return IcalendarInterface._display_timezone(
                 datetime.combine(
-                d, datetime.min.time()))
+                    d, datetime.min.time()))
 
     def _valid_title(self, event):
         r"""Return summary of event
@@ -202,8 +202,8 @@ class IcalendarInterface:
     def _cal_monday(self, day_num):
         r"""Shift the day number if week should start on Monday
 
-        Shift the day number if we're doing cal_monday, 
-        or cal_weekend is false, since that also means 
+        Shift the day number if we're doing cal_monday,
+        or cal_weekend is false, since that also means
         we're starting on day 1
 
         Parameters
@@ -227,7 +227,7 @@ class IcalendarInterface:
         Parameters
         ----------
         e_time : datetime
-        r_start : datetime 
+        r_start : datetime
         r_end : datetime
 
         Returns
@@ -306,7 +306,7 @@ class IcalendarInterface:
             event_end_date = self.decode_dtm(event, 'dtend')
             event_start_date = self.decode_dtm(event, 'dtstart')
             if event_allday:
-                # NOTE(slwaqo): in allDay events end date is always 
+                # NOTE(slwaqo): in allDay events end date is always
                 # set as day+1 and hour 0:00
                 # So to not display it one day more, it's
                 # necessary to lower it by one day
@@ -355,7 +355,7 @@ class IcalendarInterface:
                     event_color = self.options['color_now_marker']
                 else:
                     event_color = 'default'
-                # NOTE(slawqo): for all day events it's necessary to 
+                # NOTE(slawqo): for all day events it's necessary to
                 # add event to more than one day in week_events
                 titlestr = self._format_title(event,
                                               allday=event_allday)
@@ -450,7 +450,7 @@ class IcalendarInterface:
         return (print_len, len(' '.join(words[:i])))
 
     def _get_cut_index(self, event_string):
-        r"""Cut string at line break, between words or within word 
+        r"""Cut string at line break, between words or within word
         to cal_width
 
         Parameters
@@ -477,7 +477,7 @@ class IcalendarInterface:
             return self._next_cut(event_string, 0)
 
     def _GraphEvents(self, cmd, startDateTime, count, eventList):
-        r"""Constructs graphical display with weeks in rows, 
+        r"""Constructs graphical display with weeks in rows,
         days of week in columns, and event strings in cells
 
         Parameters
@@ -485,7 +485,7 @@ class IcalendarInterface:
         cmd : Command ('calw' or 'calm' for week and month)
         startDateTime : datetime (start date)
         count : int (number of weeks or months)
-        eventList : list of icalendar events 
+        eventList : list of icalendar events
         """
 
         color_border = self.options['color_border']
@@ -501,7 +501,7 @@ class IcalendarInterface:
             'hrz']
         days = 7 if self.options['cal_weekend'] else 5
         # Get the localized day names... January 1, 2001 was a Monday
-        day_names = ([date(2001, 1, i + 1).strftime('%A') 
+        day_names = ([date(2001, 1, i + 1).strftime('%A')
                       for i in range(days)])
         if not self.options['cal_monday'] or not self.options[
                 'cal_weekend']:
@@ -671,8 +671,8 @@ class IcalendarInterface:
                     for singleLine in tmpLine.split("\n"):
                         singleLine = singleLine.ljust(
                                 self.outputs.get('width'), ' ')
-                        new_descr += (singleLine[:len(indent)] + 
-                                      self.printer.art['vrt'] + 
+                        new_descr += (singleLine[:len(indent)] +
+                                      self.printer.art['vrt'] +
                                       singleLine[
                                           (len(indent) + 1):
                                           (self.outputs.get('width')
@@ -692,7 +692,7 @@ class IcalendarInterface:
             else:
                 timeFormat = '%-7s'
                 tmpTimeStr = (
-                    tm.strftime("%I:%M").lstrip('0').rjust(5) + 
+                    tm.strftime("%I:%M").lstrip('0').rjust(5) +
                     tm.strftime('%p').lower())
             return timeFormat, tmpTimeStr
 
@@ -943,7 +943,7 @@ class IcalendarInterface:
         search : string
         yearDate : boolean
         field : field within event to search
-        
+
         Returns
         -------
         int: number of events printed
@@ -963,7 +963,7 @@ class IcalendarInterface:
         start : datetime
         end : datetime
         field : field within event to search
-        
+
         Returns
         -------
         int: number of events printed
@@ -979,7 +979,7 @@ class IcalendarInterface:
         start : datetime
         end : datetime
         days : number of days
-        
+
         Returns
         -------
         int: number of events printed
@@ -1058,7 +1058,7 @@ class IcalendarInterface:
 
         Parameters
         ----------
-        search_text : string 
+        search_text : string
         start : datetime
         end : datetime
         field : string (field within event to be searched)
@@ -1099,7 +1099,7 @@ class IcalendarInterface:
 
         Parameters
         ----------
-        search_text : string 
+        search_text : string
         start : datetime
         end : datetime
         field : string (field within event to be searched)
@@ -1140,9 +1140,9 @@ class IcalendarInterface:
     def add(self, args, old=None):
         r"""Add new event
 
-        New event is created from command line or REPL arguments. 
+        New event is created from command line or REPL arguments.
         This is also called from edit in which case, fields to be
-        changed are given in args and unchanged fields are taken 
+        changed are given in args and unchanged fields are taken
         from old event.
 
         Parameters
@@ -1233,7 +1233,7 @@ class IcalendarInterface:
         elif not args.noalarm:
             event = old
         else:
-            s = re.sub('BEGIN:VALARM.*END:VALARM\s*', '',
+            s = re.sub(r'BEGIN:VALARM.*END:VALARM\s*', '',
                        old.to_ical().decode(), flags=re.DOTALL)
             event = Calendar.from_ical(s)
         event.add('last-modified', dtstamp)
@@ -1249,6 +1249,8 @@ class IcalendarInterface:
         add_or_change(event, 'dtend', self._calendar_timezone(end))
         if args.free:
             add_or_change(event, 'transp', 'TRANSPARENT')
+        if args.busy:
+            add_or_change(event, 'transp', 'OPAQUE')
         if args.location:
             add_or_change(event, 'location', args.location)
         if args.alarm:
