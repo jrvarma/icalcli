@@ -144,6 +144,7 @@ def fill_add_parser(add):
                      help='Show as busy')
     add.add_argument('-s', '--start', help='Start date/time (ISO format)')
     add.add_argument('-e', '--end', help='End date/time (ISO format)')
+    add.add_argument('-z', '--timezone', help='Specify Timezone')
     add.add_argument('-S', '--summary', help='Event Summary')
     add.add_argument('-L', '--location', help='Location')
     add.add_argument("--no-auto-sync", action="store_true", default=False,

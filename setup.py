@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-from setuptools import setup  #, find_packages
+from setuptools import setup
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(name='icalcli',
-      version='0.9.1',
+      version='0.9.3',
       maintainer='Jayanth R. Varma',
       maintainer_email='jrvarma@gmail.com',
       description='Icalendar Calendar Command Line Interface',
@@ -33,4 +33,4 @@ setup(name='icalcli',
           "Programming Language :: Python :: 3",
       ],
       python_requires='>=3.0',
-)
+)  # noqa E124

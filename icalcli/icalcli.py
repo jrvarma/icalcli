@@ -45,7 +45,7 @@ import readline  # this import ensures that input used readline
 # Required 3rd party libraries
 try:
     from icalendar import Event, Alarm, Calendar
-    from dateutil.tz import tzlocal, UTC
+    from dateutil.tz import tzlocal, UTC, gettz
 except ImportError as exc:  # pragma: no cover
     print("ERROR: Missing module - %s" % exc.args[0])
     sys.exit(1)
@@ -124,7 +124,7 @@ class IcalendarInterface:
     def _confirm(prompt):
         response = input(prompt)
         return (response and response[0].lower() == 'y')
-    
+
     @staticmethod
     def _calendar_timezone(dt):
         r"""Convert datetime to default timezone of calendar
@@ -1207,8 +1207,15 @@ class IcalendarInterface:
                     except Exception:
                         raise Exception(
                             'Time must be entered as hh:mm')
+                    if args.timezone:
+                        tz = gettz(args.timezone)
+                        if tz is None:
+                            raise Exception(
+                                'Unknown timezone ' + args.timezone)
+                    else:
+                        tz = tzlocal()
                     start = datetime(year, month, day, int(hh),
-                                     int(mm), tzinfo=tzlocal())
+                                     int(mm), tzinfo=tz)
                 else:  # old is not None here
                     hh, mm = old_start.hour, old_start.minute
                     start = datetime(year, month, day, int(hh),
@@ -1367,7 +1374,7 @@ def repl(ecal=None):
     # The no_auto_sync option is available only for editing commands
     # If an edit is done with no_auto_sync and this is followed by a viewing
     # command, we must "remember" the no_auto_sync. So we store it in ecal.
-    # If a quit command is given, we cannot auto-sync, but must prompt for sync.
+    # If a quit command is given, we cannot auto-sync, but must prompt for sync
     if "no_auto_sync" in FLAGS:
         ecal.no_auto_sync = FLAGS.no_auto_sync
 
