@@ -1093,6 +1093,23 @@ class IcalendarInterface:
             self.printer.msg("Event deleted\n")
             self.backend_cache_dirty = True
 
+    def read_edit_args(self):
+        while True:
+            s = input("Enter updated event details as if "
+                      + "adding new event\n")
+            try:
+                args = self.add_parser.parse_args(shlex.split(s))
+                # if junk:
+                #     self.printer.msg(
+                #         "Invalid options ignored\n %s\n" % "\n  "
+                #         .join(junk))
+                return args
+                break
+            except Exception as e:
+                sys.stderr.write(str(e)+'\n')
+            except SystemExit:
+                return None
+
     def edit(self, search_text='', start=None, end=None,
              field='summary'):
         r"""Edit matching events
@@ -1114,28 +1131,27 @@ class IcalendarInterface:
             self.printer.msg("%d events found" % nevents)
             for event in event_list:
                 self._iterate_events(None, [event])
-            if not IcalendarInterface._confirm(
-                    "Do you want to edit all y/n? "):
-                self.printer.msg("Action cancelled\n")
-                return
-        for event in event_list:
-            self._iterate_events(None, [event])
-            self.printer.msg(event.to_ical().decode() + '\n')
-            while True:
-                s = input("Enter updated event outputs as if "
-                          + "adding new event\n")
-                try:
-                    args = self.add_parser.parse_args(shlex.split(s))
-                    # if junk:
-                    #     self.printer.msg(
-                    #         "Invalid options ignored\n %s\n" % "\n  "
-                    #         .join(junk))
+            if IcalendarInterface._confirm(
+                    "Do you want to edit all together y/n? "):
+                all_together = True
+            else:
+                all_together = False
+                if not IcalendarInterface._confirm(
+                        "Do you want to edit all y/n? "):
+                    self.printer.msg("Action cancelled\n")
+                    return
+        if all_together:
+            args = self.read_edit_args()
+            for event in event_list:
+                self._iterate_events(None, [event])
+                self.add(args, event)
+        else:
+            for event in event_list:
+                self._iterate_events(None, [event])
+                self.printer.msg(event.to_ical().decode() + '\n')
+                args = self.read_edit_args()
+                if args:
                     self.add(args, event)
-                    break
-                except Exception as e:
-                    sys.stderr.write(str(e)+'\n')
-                except SystemExit:
-                    pass
 
     def add(self, args, old=None):
         r"""Add new event
