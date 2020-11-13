@@ -1140,7 +1140,7 @@ class IcalendarInterface:
                         "Do you want to edit all y/n? "):
                     self.printer.msg("Action cancelled\n")
                     return
-        if all_together:
+        if nevents > 1 and all_together:
             args = self.read_edit_args()
             for event in event_list:
                 self._iterate_events(None, [event])
