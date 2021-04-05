@@ -3,7 +3,7 @@
 # ** The MIT License **
 #
 # Copyright (c) 2007 Eric Davis (aka Insanum)
-# 
+#
 # Modified (c) 2019 Prof. Jayanth R. Varma (jrvarma@gmail.com)
 #      * Broke link with Google Calendar
 #      * Now processes an event list from any source.
@@ -54,7 +54,7 @@ except ImportError as exc:  # pragma: no cover
 
 from icalcli import utils
 from icalcli.argparsers import get_argument_parser, get_add_parser
-from icalcli.utils import _u, days_since_epoch
+from icalcli.utils import _u  # , days_since_epoch
 from icalcli.printer import Printer
 assert readline  # silence "imported not used warning"
 
@@ -67,7 +67,6 @@ class IcalendarInterface:
     cache = {}
     allCals = []
     allEvents = []
-    now = datetime.now(tzlocal())
 
     UNIWIDTH = {'W': 2, 'F': 2, 'N': 1, 'Na': 1, 'H': 1, 'A': 1}
 
@@ -95,11 +94,17 @@ class IcalendarInterface:
         ----------
         options : dict of command options
         """
+        self.set_now()  # set self.now
         self.options = options
         self.outputs = options.get('outputs', {})
         for key in self.default_outputs:
             if key not in self.outputs:
                 self.outputs[key] = True
+
+    def set_now(self):
+        # This command is run at initiaization, but it should also be
+        # run frequently to prevent self.now from becoming stale
+        self.now = datetime.now(tzlocal())
 
     @staticmethod
     def _display_timezone(dt):
@@ -321,7 +326,7 @@ class IcalendarInterface:
 
             # NOTE(slawqo): it's necessary to process events which
             # starts in current period of time
-            # but for all day events also to process events 
+            # but for all day events also to process events
             # which was started before current period of time and are
             # still continue in current period of time
             if event_is_today or (event_allday
@@ -438,8 +443,8 @@ class IcalendarInterface:
         words = _u(string).split()
         for i, word in enumerate(words):
             word_len = self._printed_len(word)
-            if ((cur_print_len + word_len + print_len)
-                >= self.options['cal_width']):
+            if ((cur_print_len + word_len + print_len
+                 ) >= self.options['cal_width']):
                 cut_idx = len(' '.join(words[:i]))
                 # if the  word is too long,
                 # we cannot cut between words
@@ -1304,7 +1309,7 @@ class IcalendarInterface:
 
 def repl(ecal=None):
     r"""Read Evaluate Print Loop (REPL)
-    
+
     First time, reads and executes commands from command line
     In non interactive mode, the program then exits.
     Otherwise, it repeatedly reads command from terminal
@@ -1454,6 +1459,10 @@ def main():
     ecal = repl()
     # Keep running REPL until it returns None
     while ecal:
+        # The REPL may keep running for many hours/days
+        # The date/time stored in ecal's "now" variable may become very stale
+        # So we set ecal's "now" variable before running each command.
+        ecal.set_now()
         ecal = repl(ecal=ecal)
 
 
