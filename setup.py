@@ -32,5 +32,5 @@ setup(name='icalcli',
           "License :: OSI Approved :: MIT License",
           "Programming Language :: Python :: 3",
       ],
-      python_requires='>=3.0',
+      python_requires='>=3.6',
 )  # noqa E124
