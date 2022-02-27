@@ -103,8 +103,10 @@ def get_cal_query_parser():
 
 def get_start_end_parser():
     se_parser = argparse.ArgumentParser(add_help=False)
-    se_parser.add_argument("start", type=utils.get_time_from_str, nargs="?")
-    se_parser.add_argument("end", type=utils.get_time_from_str, nargs="?")
+    se_parser.add_argument(
+        "start", type=utils.get_start_time_from_str, nargs="?")
+    se_parser.add_argument(
+        "end", type=utils.get_end_time_from_str, nargs="?")
     return se_parser
 
 
@@ -113,10 +115,11 @@ def get_search_parser():
     search_parser = argparse.ArgumentParser(add_help=False)
     search_parser.add_argument("text", nargs=1, type=utils._u)
     search_parser.add_argument(
-            "start", type=utils.get_time_from_str, nargs="?")
-    search_parser.add_argument("end", type=utils.get_time_from_str, nargs="?")
-    search_parser.add_argument("-n", "--no-ignore-case", action="store_true",
-                               default=False)
+            "start", type=utils.get_start_time_from_str, nargs="?")
+    search_parser.add_argument(
+        "end", type=utils.get_end_time_from_str, nargs="?")
+    search_parser.add_argument(
+        "-n", "--no-ignore-case", action="store_true", default=False)
     search_parser.add_argument("-u", "--uid", action="store_true",
                                default=False, help='Search by UID')
     return search_parser

@@ -811,8 +811,8 @@ class IcalendarInterface:
                 )
             self.printer.msg(xstr, 'default')
 
-    def _iterate_events(
-            self, startDateTime, eventList, yearDate=True, work=None):
+    def _iterate_events(self, startDateTime, eventList, yearDate=True,
+                        work=None, print_count=True):
         r"""Iterate through events and print them
 
         Parameters
@@ -829,9 +829,13 @@ class IcalendarInterface:
 
         selected = 0
 
-        if len(eventList) == 0:
-            self.printer.msg('\nNo Events Found...\n', 'yellow')
-            return selected
+        if print_count:
+            if len(eventList) == 0:
+                self.printer.msg('\nNo Events Found...\n', 'yellow')
+                return selected
+            else:
+                self.printer.msg(f'\n{len(eventList)} Events Found\n',
+                                 'yellow')
 
         # 12 chars for day & length must match 'indent' in _PrintEvent
         dayFormat = '\n%a %d-%b-%y' if yearDate else '\n%a %b %d  '
@@ -954,7 +958,14 @@ class IcalendarInterface:
         int: number of events printed
         """
         event_list = self._search_for_events(start, end, search, field)
-
+        spec = ""
+        if search:
+            spec += f'Search for {search} in {field} '
+        if start:
+            spec += f'From {start.strftime("%Y-%m-%d(%H:%M)")} '
+        if end:
+            spec += f'To {end.strftime("%Y-%m-%d(%H:%M)")}'
+        self.printer.msg(spec)
         return self._iterate_events(start, event_list,
                                     yearDate=yearDate)
 
@@ -994,7 +1005,8 @@ class IcalendarInterface:
                                      second=0, microsecond=0)
 
         if not end:
-            end = (start + timedelta(days=days))
+            end = (start + timedelta(days=days)).replace(
+                hour=23, minute=59, second=59, microsecond=10**6-1)
 
         return self._display_queried_events(start, end)
 
@@ -1068,16 +1080,13 @@ class IcalendarInterface:
         end : datetime
         field : string (field within event to be searched)
         """
+        self._display_queried_events(start, end, search_text, field)
         event_list = self._search_for_events(start, end,
                                              search_text, field)
         nevents = len(event_list)
         if nevents == 0:
-            self.printer.msg("No event found\n")
             return
         elif nevents > 1:
-            self.printer.msg("%d events found" % nevents)
-            for event in event_list:
-                self._iterate_events(None, [event])
             response = input(
                 "Y (delete all), P (prompt), Anything else (cancel) ")
             if not (response and response[0] in 'YP'):
@@ -1087,27 +1096,28 @@ class IcalendarInterface:
                 prompt = not response[0] == 'Y'
         else:
             prompt = True
+        deleted = 0
         for event in event_list:
-            self._iterate_events(None, [event])
+            self._iterate_events(None, [event], print_count=False)
             if prompt:
                 if not IcalendarInterface._confirm("Delete y/n? "):
-                    self.printer.msg("Action cancelled\n")
-                    return
+                    self.printer.msg("Event retained\n")
+                    continue
             self.backend_interface.delete_event(
                 event.decoded('uid').decode())
             self.printer.msg("Event deleted\n")
             self.backend_cache_dirty = True
+            deleted += 1
+        self.printer.msg(f'{deleted} events deleted\n')
 
     def read_edit_args(self):
         while True:
             s = input("Enter updated event details as if "
                       + "adding new event\n")
+            if s == '':
+                return None
             try:
                 args = self.add_parser.parse_args(shlex.split(s))
-                # if junk:
-                #     self.printer.msg(
-                #         "Invalid options ignored\n %s\n" % "\n  "
-                #         .join(junk))
                 return args
                 break
             except Exception as e:
@@ -1126,16 +1136,13 @@ class IcalendarInterface:
         end : datetime
         field : string (field within event to be searched)
         """
+        self._display_queried_events(start, end, search_text, field)
         event_list = self._search_for_events(start, end,
                                              search_text, field)
         nevents = len(event_list)
         if nevents == 0:
-            self.printer.msg("No event found\n")
             return
         if nevents > 1:
-            self.printer.msg("%d events found" % nevents)
-            for event in event_list:
-                self._iterate_events(None, [event])
             if IcalendarInterface._confirm(
                     "Do you want to edit all together y/n? "):
                 all_together = True
@@ -1145,18 +1152,28 @@ class IcalendarInterface:
                         "Do you want to edit all y/n? "):
                     self.printer.msg("Action cancelled\n")
                     return
+        edited = 0
         if nevents > 1 and all_together:
             args = self.read_edit_args()
-            for event in event_list:
-                self._iterate_events(None, [event])
-                self.add(args, event)
+            if args:
+                for event in event_list:
+                    self._iterate_events(None, [event],
+                                         print_count=False)
+                    self.add(args, event)
+                    edited += 1
+            else:
+                self.printer.msg('Event not edited\n')
         else:
             for event in event_list:
-                self._iterate_events(None, [event])
+                self._iterate_events(None, [event], print_count=False)
                 self.printer.msg(event.to_ical().decode() + '\n')
                 args = self.read_edit_args()
                 if args:
                     self.add(args, event)
+                    edited += 1
+                else:
+                    self.printer.msg('Event not edited\n')
+        self.printer.msg(f'{edited} events edited\n')
 
     def add(self, args, old=None):
         r"""Add new event
@@ -1291,7 +1308,7 @@ class IcalendarInterface:
         if not args.no_prompt:
             self.printer.msg("New Event Details\n")
             self.printer.msg(event.to_ical().decode())
-            self._iterate_events(None, [event])
+            self._iterate_events(None, [event], print_count=False)
             if not IcalendarInterface._confirm("Proceed y/n? "):
                 self.printer.msg("Action cancelled\n")
                 return

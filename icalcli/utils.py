@@ -108,22 +108,29 @@ def get_times_from_duration(when, duration=0, allday=False):
     return start, stop
 
 
-def get_time_from_str(when):
-    """Convert a string to a time: first uses the dateutil parser, falls back
-    on fuzzy matching with parsedatetime"""
-    zero_oclock_today = datetime.now(tzlocal()).replace(
+def get_start_time_from_str(when):
+    return get_time_from_str(when, start=True)
+
+
+def get_end_time_from_str(when):
+    return get_time_from_str(when, start=False)
+
+
+def get_time_from_str(when, start=True):
+    """Convert string to time (fuzzy matching with parsedatetime)
+    Change datetime to beginning/end of day when start is True/False
+    """
+
+    struct, result = fuzzy_date_parse(when)
+    if not result:
+        raise ValueError("Date and time is invalid: %s" % (when))
+    event_time = datetime.fromtimestamp(time.mktime(struct), tzlocal())
+    if start:
+        return event_time.replace(
             hour=0, minute=0, second=0, microsecond=0)
-
-    try:
-        event_time = dateutil_parse(when, default=zero_oclock_today)
-        raise ValueError
-    except ValueError:
-        struct, result = fuzzy_date_parse(when)
-        if not result:
-            raise ValueError("Date and time is invalid: %s" % (when))
-        event_time = datetime.fromtimestamp(time.mktime(struct), tzlocal())
-
-    return event_time
+    else:
+        return event_time.replace(
+            hour=23, minute=59, second=59, microsecond=10**6-1)
 
 
 def days_since_epoch(dt):
