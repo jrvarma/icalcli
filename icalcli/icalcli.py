@@ -1066,8 +1066,11 @@ class IcalendarInterface:
     def sync(self):
         r"""Sync calendar
         """
+        self.printer.msg("Syncing in progress\n")
         self.backend_interface.sync(self.vtimezone)
         self.backend_cache_dirty = False
+        now = datetime.now().strftime('%Y-%m-%d %H:%M')
+        self.printer.msg(f"Sync completed at {now}\n")
 
     def delete(self, search_text='', start=None, end=None,
                field='summary'):
@@ -1320,7 +1323,7 @@ class IcalendarInterface:
             self.backend_interface.create_event(event, self.vtimezone)
         self.printer.msg("Event %s\n" % ("updated" if old
                                          else "added"))
-        self._iterate_events(None, [event])
+        self._iterate_events(None, [event], print_count=False)
         self.backend_cache_dirty = True
 
 
