@@ -188,6 +188,9 @@ def get_argument_parser():
         help="Choose line art style for calendars: \"fancy\": for" +
         "VTcodes, \"unicode\" for Unicode box drawing characters," +
         "\"ascii\" for old-school plusses, hyphens and pipes.")
+    parser.add_argument(
+        "--stack_trace", action="store_true", default=False,
+        help="Print stack trace using traceback.print_exc()")
 
     # parent parser types used for subcommands
     outputs_parser = get_outputs_parser()

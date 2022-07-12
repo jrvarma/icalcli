@@ -19,8 +19,16 @@ class ICSInterface:
         self.all_events()
 
     def all_events(self):
+        def check_event(event):
+            if event.errors:
+                print("iCalendar error:\n{:} while parsing\n{:}".format(
+                    event.errors, event.to_ical().decode()))
+                return False
+            else:
+                return True
         self.ical = Calendar.from_ical(self.ics)
-        self.events = self.ical.walk('VEVENT')
+        self.events = [ev for ev in self.ical.walk('VEVENT')
+                       if check_event(ev)]
         self.cache_events = {}
         for ev in self.events:
             uid = ev.decoded('uid').decode()

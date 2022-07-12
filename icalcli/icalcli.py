@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2007 Eric Davis (aka Insanum)
 #
-# Modified (c) 2019 Prof. Jayanth R. Varma (jrvarma@gmail.com)
+# Modified (c) 2019-2022 Prof. Jayanth R. Varma (jrvarma@gmail.com)
 #      * Broke link with Google Calendar
 #      * Now processes an event list from any source.
 #      * Renamed from gcalcli to icalcli
@@ -40,7 +40,8 @@ from collections import namedtuple
 from socket import gethostname
 import importlib.util
 import shlex
-import readline  # this import ensures that input used readline
+import readline  # noqa: F401
+from traceback import print_exc
 
 # Required 3rd party libraries
 try:
@@ -56,10 +57,23 @@ from icalcli import utils
 from icalcli.argparsers import get_argument_parser, get_add_parser
 from icalcli.utils import _u  # , days_since_epoch
 from icalcli.printer import Printer
-assert readline  # silence "imported not used warning"
 
 EventTitle = namedtuple('EventTitle', ['title', 'color'])
 CalName = namedtuple('CalName', ['name', 'color'])
+
+
+def safe_decode(x, field):
+    try:
+        return x.decoded(field)
+    except:  # noqa: E722
+        print("iCalendar error:", x.errors)
+        print("iCalendar could not decode {:} field of \n{:}".format(
+            field, x.to_ical().decode()))
+        raise
+
+
+Event.Decoded = safe_decode
+Alarm.Decoded = safe_decode
 
 
 class IcalendarInterface:
@@ -161,9 +175,9 @@ class IcalendarInterface:
         datetime (timezone aware)
         """
         if field not in event and field == 'dtend':
-            d = event.decoded('dtstart') + event.decoded('duration')
+            d = event.Decoded('dtstart') + event.Decoded('duration')
         else:
-            d = event.decoded(field)
+            d = event.Decoded(field)
         if isinstance(d, datetime):
             return IcalendarInterface._display_timezone(d)
         else:
@@ -183,8 +197,8 @@ class IcalendarInterface:
         string
         """
         if 'summary' in event and (
-                event.decoded('summary').decode().strip()):
-            return event.decoded('summary').decode()
+                event.Decoded('summary').decode().strip()):
+            return event.Decoded('summary').decode()
         else:
             return "(No title)"
 
@@ -745,8 +759,8 @@ class IcalendarInterface:
         if self.outputs.get('alarms'):
             alarms = event.walk('valarm')
             if alarms:
-                if isinstance(alarms[0].decoded('trigger'), timedelta):
-                    minutes = -(alarms[0].decoded('trigger')
+                if isinstance(alarms[0].Decoded('trigger'), timedelta):
+                    minutes = -(alarms[0].Decoded('trigger')
                                 .total_seconds()/60)
                     self.printer.msg(' AL:%.0fm' % minutes)
                 else:
@@ -755,7 +769,7 @@ class IcalendarInterface:
                 self.printer.msg(' '*7)
         if self.outputs.get('freebusy'):
             free = ('transp' in event and
-                    event.decoded('transp').decode() == 'TRANSPARENT')
+                    event.Decoded('transp').decode() == 'TRANSPARENT')
             self.printer.msg(' free ' if free else ' busy ',
                              eventColor)
 
@@ -764,19 +778,19 @@ class IcalendarInterface:
 
         if(self.outputs.get('location')
            and 'location' in event
-           and event.decoded('location').decode().strip()):
-            xstr = " [%s]" % (event.decoded('location').
+           and event.Decoded('location').decode().strip()):
+            xstr = " [%s]" % (event.Decoded('location').
                               decode().strip())
             self.printer.msg(xstr, 'default')
 
         if self.outputs.get('uid'):
-            xstr = " <%s>" % (event.decoded('uid').decode().strip())
+            xstr = " <%s>" % (event.Decoded('uid').decode().strip())
             self.printer.msg(xstr, 'default')
 
         self.printer.msg('\n')
 
         if(self.outputs.get('description') and 'description' in event
-           and event.decoded('description').decode().strip()):
+           and event.Decoded('description').decode().strip()):
             descrIndent = outputsIndent + '  '
             box = True  # leave old non-box code for option later
             if box:
@@ -795,7 +809,7 @@ class IcalendarInterface:
                 xstr = "%s  Description:\n%s\n%s\n%s\n" % (
                     outputsIndent,
                     topMarker,
-                    _formatDescr(event.decoded('description').
+                    _formatDescr(event.Decoded('description').
                                  decode().strip(), descrIndent, box),
                     botMarker
                 )
@@ -805,7 +819,7 @@ class IcalendarInterface:
                 xstr = "%s  Description:\n%s\n%s\n%s\n" % (
                     outputsIndent,
                     marker,
-                    _formatDescr(event.decoded('description').
+                    _formatDescr(event.Decoded('description').
                                  decode().strip(), descrIndent, box),
                     marker
                 )
@@ -902,11 +916,11 @@ class IcalendarInterface:
         a) the date based search (unless both start & end are None)
         """
         if 'dtend' in event:
-            event_end = self._to_datetime(event.decoded('dtend'))
+            event_end = self._to_datetime(event.Decoded('dtend'))
         else:
-            event_end = self._to_datetime(event.decoded('dtstart')
-                                          + event.decoded('duration'))
-        event_start = self._to_datetime(event.decoded('dtstart'))
+            event_end = self._to_datetime(event.Decoded('dtstart')
+                                          + event.Decoded('duration'))
+        event_start = self._to_datetime(event.Decoded('dtstart'))
         date_in_range = not ((start and event_end < start) or
                              (end and event_start > end))
         flags = re.I if ignore_case else 0
@@ -938,7 +952,7 @@ class IcalendarInterface:
                       if self.event_match(ev, start, end, pattern,
                                           field, ignore_case)]
         event_list.sort(key=lambda x: (self.decode_dtm(x, 'dtstart'),
-                                       x.decoded('summary').decode()))
+                                       x.Decoded('summary').decode()))
         return event_list
 
     def _display_queried_events(self, start, end, search=None,
@@ -1107,7 +1121,7 @@ class IcalendarInterface:
                     self.printer.msg("Event retained\n")
                     continue
             self.backend_interface.delete_event(
-                event.decoded('uid').decode())
+                event.Decoded('uid').decode())
             self.printer.msg("Event deleted\n")
             self.backend_cache_dirty = True
             deleted += 1
@@ -1172,13 +1186,13 @@ class IcalendarInterface:
                 self.printer.msg(event.to_ical().decode() + '\n')
                 args = self.read_edit_args()
                 if args:
-                    self.add(args, event)
-                    edited += 1
+                    if self.add(args, event):
+                        edited += 1
                 else:
                     self.printer.msg('Event not edited\n')
         self.printer.msg(f'{edited} events edited\n')
 
-    def add(self, args, old=None):
+    def add(self, args, original=None):
         r"""Add new event
 
         New event is created from command line or REPL arguments.
@@ -1192,14 +1206,16 @@ class IcalendarInterface:
         old : None or icalendar event to be replaced
         """
         default_event_duration = timedelta(minutes=30)
-        if old:
-            uid = old.decoded('uid').decode()
-            old_start = self._display_timezone(old.decoded('dtstart'))
+        old = None
+        if original:
+            old = original.copy()
+            uid = old.Decoded('uid').decode()
+            old_start = self._display_timezone(old.Decoded('dtstart'))
             old_duration = (
-                ('duration' in old and old.decoded('duration')) or
-                (old.decoded('dtend') - old.decoded('dtstart')))
+                ('duration' in old and old.Decoded('duration')) or
+                (old.Decoded('dtend') - old.Decoded('dtstart')))
             if not args.summary:
-                args.summary = old.decoded('summary').decode()
+                args.summary = old.Decoded('summary').decode()
             if(not args.time and not (args.start and 'T' in args.start)
                and self._isallday(old)):
                 args.allday = True
@@ -1309,12 +1325,13 @@ class IcalendarInterface:
             add_or_change(alarm, 'trigger',
                           timedelta(minutes=-args.alarm))
         if not args.no_prompt:
-            self.printer.msg("New Event Details\n")
+            self.printer.msg("{:} Event Details\n".format(
+                "Edited" if old else "New"))
             self.printer.msg(event.to_ical().decode())
             self._iterate_events(None, [event], print_count=False)
             if not IcalendarInterface._confirm("Proceed y/n? "):
                 self.printer.msg("Action cancelled\n")
-                return
+                return False
         self.printer.msg("%s event\n" % ("Updating" if old
                                          else "adding"))
         if old:
@@ -1325,6 +1342,7 @@ class IcalendarInterface:
                                          else "added"))
         self._iterate_events(None, [event], print_count=False)
         self.backend_cache_dirty = True
+        return True
 
 
 def repl(ecal=None):
@@ -1461,6 +1479,8 @@ def repl(ecal=None):
 
     except Exception as exc:
         ecal.printer.err_msg(str(exc)+'\n')
+        if ecal.options['stack_trace']:
+            print_exc()
         return ecal if ecal.interactive else None
 
     if ecal.backend_cache_dirty and not ecal.no_auto_sync:

@@ -87,6 +87,7 @@ backend_interface = EtesyncInterface(
     c['uid'], c['authToken'],
     base64.decodebytes(c['cipher_key'].encode('ascii')))
 ```
+See the [Example code](https://github.com/jrvarma/icalcli/issues/1#issuecomment-979851222) for getting the  `uid` and `authToken` for the `etesync` calendar.
 
 ## Screenshots
 
