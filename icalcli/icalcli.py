@@ -928,7 +928,7 @@ class IcalendarInterface:
             re.search(pattern, event[field], flags=flags) is not None)
         return date_in_range and pat_match
 
-    def _search_for_events(self, start, end, pattern, field='summary'):
+    def _search_for_events(self, start, end, pattern, field='summary', dedup=True):
         r"""Retrieve events matching (text and/or date based) search
 
         Parameters
@@ -938,6 +938,8 @@ class IcalendarInterface:
         pattern : regex pattern for text based searches (default: None)
         field : field to be searched for text based searches
                 (defaults to 'summary")
+        dedup : should we deduplicate events with the same UID?
+                (defaults to True)
         Returns
         -------
         list of matching vevents
@@ -951,8 +953,14 @@ class IcalendarInterface:
         event_list = [ev for ev in self.backend_interface.events
                       if self.event_match(ev, start, end, pattern,
                                           field, ignore_case)]
+        # deduplicate events now if needed
+        if dedup:
+            if len(set(e.Decoded('uid') for e in event_list)) < len(event_list):
+                # list to dict to list is a one-liner dedup
+                event_list = list({ e.Decoded('uid'): e for e in event_list }.values())
         event_list.sort(key=lambda x: (self.decode_dtm(x, 'dtstart'),
                                        x.Decoded('summary').decode()))
+
         return event_list
 
     def _display_queried_events(self, start, end, search=None,
