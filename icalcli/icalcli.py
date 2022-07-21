@@ -915,12 +915,15 @@ class IcalendarInterface:
         AND
         a) the date based search (unless both start & end are None)
         """
+        event_start = self._to_datetime(event.Decoded('dtstart'))
         if 'dtend' in event:
             event_end = self._to_datetime(event.Decoded('dtend'))
-        else:
+        elif 'duration' in event:
             event_end = self._to_datetime(event.Decoded('dtstart')
                                           + event.Decoded('duration'))
-        event_start = self._to_datetime(event.Decoded('dtstart'))
+        else:
+            # special case where an event is punctual and has no end date
+            event_end = event_start
         date_in_range = not ((start and event_end < start) or
                              (end and event_start > end))
         flags = re.I if ignore_case else 0
