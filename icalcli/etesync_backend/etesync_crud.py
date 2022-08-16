@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import etesync as api
+from time import sleep
 
 # The EtesyncCRUD class exposes methods for each of the CRUD operations
 # (Create, Retrieve, Update and Delete) and for sync with the server.
@@ -50,6 +51,15 @@ class EtesyncCRUD:
         # needs to be done once on any machine
         # else the get on the next line fails
         silent or print("Syncing with server. Please wait")
+        msg = "etesync.sync attempt {:} failed. Will retry after {:} seconds"
+        delay = 5
+        for i in range(5):
+            try:
+                self.etesync.sync()
+                break
+            except Exception:
+                silent or print(msg.format(i+1, delay))
+                sleep(delay)
         self.etesync.sync()
         silent or print("Syncing completed.")
         self.journal = self.etesync.get(uid)

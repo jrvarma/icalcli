@@ -120,8 +120,10 @@ def get_search_parser():
         "end", type=utils.get_end_time_from_str, nargs="?")
     search_parser.add_argument(
         "-n", "--no-ignore-case", action="store_true", default=False)
-    search_parser.add_argument("-u", "--uid", action="store_true",
-                               default=False, help='Search by UID')
+    # search_parser.add_argument("-u", "--uid", action="store_true",
+    #                            default=False, help='Search by UID')
+    search_parser.add_argument(
+        "-p", "--property", default='summary', type=utils._u)
     return search_parser
 
 
@@ -154,44 +156,60 @@ def fill_add_parser(add):
                      help="Automatically sync when calendar changed")
     add.add_argument("--no-prompt", action="store_true", default=False,
                      help="Add event without prompting")
+    add.add_argument('--rrule', help='Recurrence rule (RRULE)')
+    add.add_argument('--rdate', help='Recurrence date (RDATE')
+    add.add_argument('--exrule', help='Exception date (EXRULE)')
+    add.add_argument('--exdate', help='Exception date (EXDATE)')
+    add.add_argument('--raw_ics', help='Create/edit event using raw ICS text')
     return add
 
 
-def get_argument_parser():
-    parser = argparse.ArgumentParser(
-        description='Icalendar Calendar Command Line Interface',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        fromfile_prefix_chars="@")
+def get_argument_parser(initial=True):
+    if initial:
+        parser = argparse.ArgumentParser(
+            description='Icalendar Calendar Command Line Interface',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            fromfile_prefix_chars="@")
 
-    parser.add_argument(
-        "--version", action="version", version="%%(prog)s %s (%s)" %
-        (icalcli.__version__, icalcli.__author__))
+        parser.add_argument(
+            "--version", action="version", version="%%(prog)s %s (%s)" %
+            (icalcli.__version__, icalcli.__author__))
 
-    parser.add_argument(
-        "-i", "--interactive", action="store_true", default=False,
-        help="Interactively execute commands")
-    parser.add_argument(
-        "-c", "--config", default=expanduser('~/.icalcli.py'),
-        type=str, help="Config script to be executed")
-    parser.add_argument(
-        "--locale", default='', type=str, help="System locale")
-    parser.add_argument(
-        "--conky", action="store_true", default=False,
-        help="Use Conky color codes")
-    parser.add_argument(
-        "--nocolor", action="store_false",
-        default=stdout.isatty(), dest="color",
-        help="Enable/Disable all color output")
-    parser.add_argument(
-        "--lineart", default="unicode",
-        choices=["fancy", "unicode", "ascii"],
-        help="Choose line art style for calendars: \"fancy\": for" +
-        "VTcodes, \"unicode\" for Unicode box drawing characters," +
-        "\"ascii\" for old-school plusses, hyphens and pipes.")
-    parser.add_argument(
-        "--stack_trace", action="store_true", default=False,
-        help="Print stack trace using traceback.print_exc()")
-
+        parser.add_argument(
+            "-i", "--interactive", action="store_true", default=False,
+            help="Interactively execute commands")
+        parser.add_argument(
+            "-c", "--config", default=expanduser('~/.icalcli.py'),
+            type=str, help="Config script to be executed")
+        parser.add_argument(
+            "--locale", default='', type=str, help="System locale")
+        parser.add_argument(
+            "--conky", action="store_true", default=False,
+            help="Use Conky color codes")
+        parser.add_argument(
+            "--nocolor", action="store_false",
+            default=stdout.isatty(), dest="color",
+            help="Enable/Disable all color output")
+        parser.add_argument(
+            "--lineart", default="unicode",
+            choices=["fancy", "unicode", "ascii"],
+            help="Choose line art style for calendars: \"fancy\": for" +
+            "VTcodes, \"unicode\" for Unicode box drawing characters," +
+            "\"ascii\" for old-school plusses, hyphens and pipes.")
+        parser.add_argument(
+            "--stack_trace", action="store_true", default=False,
+            help="Print stack trace using traceback.print_exc()")
+        parser.add_argument(
+            "--default_past_years", type=int, default=5,
+            help="No of past years to search if no start date is given")
+        parser.add_argument(
+            "--default_future_years", type=int, default=5,
+            help="No of future years to search if no end date is given")
+    else:
+        parser = argparse.ArgumentParser(
+            prog='', description='icalcli subcommands',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            fromfile_prefix_chars="@")
     # parent parser types used for subcommands
     outputs_parser = get_outputs_parser()
     color_parser = get_color_parser()

@@ -4,11 +4,13 @@
 #
 # Copyright (c) 2007 Eric Davis (aka Insanum)
 #
-# Modified (c) 2019-2022 Prof. Jayanth R. Varma (jrvarma@gmail.com)
+# Copyright (c) 2019-2022 Prof. Jayanth R. Varma (jrvarma@gmail.com)
 #      * Broke link with Google Calendar
 #      * Now processes an event list from any source.
 #      * Renamed from gcalcli to icalcli
-#
+#      * Editing of multiple events together
+#      * Regular expression search
+#      * Added an interactive REPL and many new command line options
 
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated documentation
@@ -42,14 +44,18 @@ import importlib.util
 import shlex
 import readline  # noqa: F401
 from traceback import print_exc
+from difflib import unified_diff
 
 # Required 3rd party libraries
 try:
     from icalendar import Event, Alarm, Calendar
+    from icalendar.prop import TypesFactory
     from dateutil.tz import tzlocal, UTC, gettz
+    import recurring_ical_events
 except ImportError as exc:  # pragma: no cover
     print("ERROR: Missing module - %s" % exc.args[0])
     sys.exit(1)
+
 
 # Package local imports
 
@@ -60,6 +66,10 @@ from icalcli.printer import Printer
 
 EventTitle = namedtuple('EventTitle', ['title', 'color'])
 CalName = namedtuple('CalName', ['name', 'color'])
+ALL_EVENTS = 0
+RECURRING_EVENTS = 1
+NON_RECURRING_EVENTS = 2
+ORIGINAL_OF_RECURRING_EVENTS = 3
 
 
 def safe_decode(x, field):
@@ -83,19 +93,23 @@ class IcalendarInterface:
     allEvents = []
 
     UNIWIDTH = {'W': 2, 'F': 2, 'N': 1, 'Na': 1, 'H': 1, 'A': 1}
-
     backend_cache_dirty = False
-
     default_outputs = ['end', 'alarms', 'freebusy', 'location']
+    no_past_events = 5
+    no_future_events = 10
 
     def __init__(self, add_parser, backend_interface, printer,
                  **options):
 
         self.cals = []
         self.printer = printer
+        self.initial_options = options
         self.set_options(options)
         self.add_parser = add_parser
         self.backend_interface = backend_interface
+        self.events = self.backend_interface.events.copy()
+        self.check_duplicate_uids()
+        self.setup_recurring_events()
         # stored as detail, but provided as option: TODO: fix that
         self.outputs['width'] = options.get('width', 80)
 
@@ -108,8 +122,8 @@ class IcalendarInterface:
         ----------
         options : dict of command options
         """
-        self.set_now()  # set self.now
         self.options = options
+        self.set_now()  # set self.now
         self.outputs = options.get('outputs', {})
         for key in self.default_outputs:
             if key not in self.outputs:
@@ -120,8 +134,47 @@ class IcalendarInterface:
         # run frequently to prevent self.now from becoming stale
         self.now = datetime.now(tzlocal())
 
+        def offset(now, years):
+            d = int(365.25 * years) + (1 if years > 0 else -1)
+            dt = now + timedelta(days=d)
+            return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.default_start = offset(
+            self.now, -self.initial_options['default_past_years'])
+        self.default_end = offset(
+            self.now, self.initial_options['default_future_years'])
+
     @staticmethod
-    def _display_timezone(dt):
+    def uid(event):
+        """Return uid of event"""
+        return event.Decoded('uid').decode()
+
+    def check_duplicate_uids(self):
+        # fixes https://github.com/jrvarma/icalcli/pull/8#issue-1310596831
+        if len(set(self.uid(e) for e in self.events)) < len(self.events):
+            # list to dict to list is a one-liner dedup
+            self.events = list(
+                {self.uid(e): e for e in self.events}.values())
+            self.readonly = True
+            raise Exception('Duplicate UIDs found. '
+                            'Calendar deduplicated and set to readonly')
+        else:
+            self.readonly = False
+
+    def setup_recurring_events(self):
+        self.recur_uids = set(self.uid(e) for e in self.events
+                              if 'RRULE' in e or 'RDATE' in e)
+        if self.recur_uids:
+            cal = Calendar()
+            ics_list = []
+            for event in self.events:
+                cal.add_component(event)
+            ics_list += [cal.to_ical().decode()]
+            self.calendar = Calendar.from_ical("".join(ics_list))
+            self.recurring_events = recurring_ical_events.of(
+                self.calendar, keep_recurrence_attributes=True)
+
+    @staticmethod
+    def display_timezone(dt):
         r"""Set or convert timezone to display time in local timezone
 
         Parameters
@@ -140,12 +193,12 @@ class IcalendarInterface:
             return dt.astimezone(tzlocal())
 
     @staticmethod
-    def _confirm(prompt):
+    def confirm(prompt):
         response = input(prompt)
         return (response and response[0].lower() == 'y')
 
     @staticmethod
-    def _calendar_timezone(dt):
+    def calendar_timezone(dt):
         r"""Convert datetime to default timezone of calendar
 
         Parameters
@@ -179,13 +232,13 @@ class IcalendarInterface:
         else:
             d = event.Decoded(field)
         if isinstance(d, datetime):
-            return IcalendarInterface._display_timezone(d)
+            return IcalendarInterface.display_timezone(d)
         else:
-            return IcalendarInterface._display_timezone(
+            return IcalendarInterface.display_timezone(
                 datetime.combine(
                     d, datetime.min.time()))
 
-    def _valid_title(self, event):
+    def valid_title(self, event):
         r"""Return summary of event
 
         Parameters
@@ -202,7 +255,7 @@ class IcalendarInterface:
         else:
             return "(No title)"
 
-    def _isallday(self, event):
+    def isallday(self, event):
         r"""Whether event is an All Day event
 
         Parameters
@@ -218,7 +271,7 @@ class IcalendarInterface:
                 self.decode_dtm(event, 'dtend').hour == 0 and
                 self.decode_dtm(event, 'dtend').minute == 0)
 
-    def _cal_monday(self, day_num):
+    def cal_monday(self, day_num):
         r"""Shift the day number if week should start on Monday
 
         Shift the day number if we're doing cal_monday,
@@ -240,7 +293,7 @@ class IcalendarInterface:
                 day_num = 6
         return day_num
 
-    def _event_time_in_range(self, e_time, r_start, r_end):
+    def event_time_in_range(self, e_time, r_start, r_end):
         r"""Whether event time is within given range
 
         Parameters
@@ -255,7 +308,7 @@ class IcalendarInterface:
         """
         return e_time >= r_start and e_time < r_end
 
-    def _event_spans_time(self, e_start, e_end, time_point):
+    def event_spans_time(self, e_start, e_end, time_point):
         r"""Whether event straddles given time
 
         Parameters
@@ -270,7 +323,7 @@ class IcalendarInterface:
         """
         return e_start < time_point and e_end >= time_point
 
-    def _format_title(self, event, allday=False):
+    def format_title(self, event, allday=False):
         r"""Return event title (summary and start time)
 
         Parameters
@@ -282,7 +335,7 @@ class IcalendarInterface:
         -------
         string
         """
-        titlestr = self._valid_title(event)
+        titlestr = self.valid_title(event)
         if allday:
             return titlestr
         elif self.options['military']:
@@ -296,7 +349,7 @@ class IcalendarInterface:
                 self.decode_dtm(event, 'dtstart').strftime('%p')
                 .lower(), titlestr])
 
-    def _get_week_events(self, start_dt, end_dt, event_list):
+    def get_week_events(self, start_dt, end_dt, event_list):
         r"""Returns all events during a week (start_dt to end_dt)
 
         Parameters
@@ -315,12 +368,12 @@ class IcalendarInterface:
         to_show_now = True
         if self.now < start_dt or self.now > end_dt:
             to_show_now = False
-        now_daynum = self._cal_monday(int(self.now.strftime("%w")))
+        now_daynum = self.cal_monday(int(self.now.strftime("%w")))
 
         for event in event_list:
-            event_daynum = self._cal_monday(int(self.decode_dtm(
+            event_daynum = self.cal_monday(int(self.decode_dtm(
                 event, 'dtstart').strftime("%w")))
-            event_allday = self._isallday(event)
+            event_allday = self.isallday(event)
 
             event_end_date = self.decode_dtm(event, 'dtend')
             event_start_date = self.decode_dtm(event, 'dtstart')
@@ -331,10 +384,10 @@ class IcalendarInterface:
                 # necessary to lower it by one day
                 event_end_date -= timedelta(days=1)
 
-            event_is_today = self._event_time_in_range(
+            event_is_today = self.event_time_in_range(
                 event_start_date, start_dt, end_dt)
 
-            event_continues_today = self._event_spans_time(
+            event_continues_today = self.event_spans_time(
                 event_start_date, event_end_date,
                 start_dt)
 
@@ -376,13 +429,12 @@ class IcalendarInterface:
                     event_color = 'default'
                 # NOTE(slawqo): for all day events it's necessary to
                 # add event to more than one day in week_events
-                titlestr = self._format_title(event,
-                                              allday=event_allday)
+                titlestr = self.format_title(event, allday=event_allday)
                 if event_allday and event_start_date < event_end_date:
                     if event_end_date >= end_dt:
                         end_daynum = 6
                     else:
-                        end_daynum = self._cal_monday(int(
+                        end_daynum = self.cal_monday(int(
                             event_end_date.strftime("%w")))
                     if event_start_date < start_dt:
                         start_daynum = 0
@@ -400,7 +452,7 @@ class IcalendarInterface:
                             EventTitle('\n' + titlestr, event_color))
         return week_events
 
-    def _printed_len(self, string):
+    def printed_len(self, string):
         r"""Find printed length of a string
 
         We need to treat everything as unicode for this to give
@@ -420,7 +472,7 @@ class IcalendarInterface:
                 self.UNIWIDTH[east_asian_width(char)] for char in _u(
                     string))
 
-    def _word_cut(self, word):
+    def word_cut(self, word):
         r"""Where to cut word to fit into cal_width
 
         Parameters
@@ -433,11 +485,11 @@ class IcalendarInterface:
         """
         stop = 0
         for i, char in enumerate(word):
-            stop += self._printed_len(char)
+            stop += self.printed_len(char)
             if stop >= self.options['cal_width']:
                 return stop, i + 1
 
-    def _next_cut(self, string, cur_print_len):
+    def next_cut(self, string, cur_print_len):
         r"""Where to cut string to fit into cal_width
 
         Tries to cut between words if possible.
@@ -456,19 +508,19 @@ class IcalendarInterface:
 
         words = _u(string).split()
         for i, word in enumerate(words):
-            word_len = self._printed_len(word)
+            word_len = self.printed_len(word)
             if ((cur_print_len + word_len + print_len
                  ) >= self.options['cal_width']):
                 cut_idx = len(' '.join(words[:i]))
                 # if the  word is too long,
                 # we cannot cut between words
                 if cut_idx == 0:
-                    return self._word_cut(word)
+                    return self.word_cut(word)
                 return (print_len, cut_idx)
             print_len += word_len + i  # +i for the space between words
         return (print_len, len(' '.join(words[:i])))
 
-    def _get_cut_index(self, event_string):
+    def get_cut_index(self, event_string):
         r"""Cut string at line break, between words or within word
         to cal_width
 
@@ -480,22 +532,22 @@ class IcalendarInterface:
         -------
         int: where to cut
         """
-        print_len = self._printed_len(event_string)
+        print_len = self.printed_len(event_string)
 
         # newline in string is a special case
         idx = event_string.find('\n')
         if idx > -1 and idx <= self.options['cal_width']:
-            return (self._printed_len(event_string[:idx]),
+            return (self.printed_len(event_string[:idx]),
                     len(event_string[:idx]))
 
         if print_len <= self.options['cal_width']:
             return (print_len, len(event_string))
 
         else:
-            # we must cut: _next_cut loops until we find the right spot
-            return self._next_cut(event_string, 0)
+            # we must cut: next_cut loops until we find the right spot
+            return self.next_cut(event_string, 0)
 
-    def _GraphEvents(self, cmd, startDateTime, count, eventList):
+    def GraphEvents(self, cmd, startDateTime, count, eventList):
         r"""Constructs graphical display with weeks in rows,
         days of week in columns, and event strings in cells
 
@@ -547,7 +599,7 @@ class IcalendarInterface:
             month_width = (self.options['cal_width'] * days) + (
                 days - 1)
             month_title += ' ' * (month_width
-                                  - self._printed_len(month_title))
+                                  - self.printed_len(month_title))
 
             self.printer.art_msg('vrt', color_border)
             self.printer.msg(month_title, self.options['color_date'])
@@ -565,7 +617,7 @@ class IcalendarInterface:
         self.printer.art_msg('vrt', color_border)
         for day_name in day_names:
             day_name += ' ' * (
-                    self.options['cal_width'] - self._printed_len(
+                    self.options['cal_width'] - self.printed_len(
                         day_name))
 
             self.printer.msg(day_name, self.options['color_date'])
@@ -576,7 +628,7 @@ class IcalendarInterface:
 
         # get date range objects for the first week
         if cmd == 'calm':
-            day_num = self._cal_monday(
+            day_num = self.cal_monday(
                 int(startDateTime.strftime("%w")))
             startDateTime = (startDateTime - timedelta(days=day_num))
         startWeekDateTime = startDateTime
@@ -603,7 +655,7 @@ class IcalendarInterface:
                     d += " **"
 
                 d += ' ' * (self.options['cal_width']
-                            - self._printed_len(d))
+                            - self.printed_len(d))
 
                 # print dates
                 self.printer.art_msg('vrt', color_border)
@@ -612,7 +664,7 @@ class IcalendarInterface:
             self.printer.art_msg('vrt', color_border)
             self.printer.msg('\n')
 
-            week_events = self._get_week_events(
+            week_events = self.get_week_events(
                     startWeekDateTime, endWeekDateTime, eventList)
 
             # get date range objects for the next week
@@ -634,7 +686,7 @@ class IcalendarInterface:
                         continue
 
                     curr_event = week_events[j][0]
-                    print_len, cut_idx = self._get_cut_index(
+                    print_len, cut_idx = self.get_cut_index(
                         curr_event.title)
                     padding = ' ' * (self.options['cal_width']
                                      - print_len)
@@ -664,7 +716,7 @@ class IcalendarInterface:
             else:
                 self.printer.msg(week_bottom + '\n', color_border)
 
-    def _PrintEvent(self, event, prefix):
+    def PrintEvent(self, event, prefix, ev_type=ALL_EVENTS):
         r"""Prints one event
 
         Parameters
@@ -673,7 +725,7 @@ class IcalendarInterface:
         prefix : string (for example, indent before event)
         """
 
-        def _formatDescr(descr, indent, box):
+        def formatDescr(descr, indent, box):
             wrapper = textwrap.TextWrapper()
             if box:
                 wrapper.initial_indent = (indent + '  ')
@@ -732,14 +784,20 @@ class IcalendarInterface:
         happeningNow = (self.decode_dtm(event, 'dtstart')
                         <= self.now
                         <= self.decode_dtm(event, 'dtend'))
-        allDay = self._isallday(event)
+        allDay = self.isallday(event)
         eventColor = (self.options['color_now_marker']
                       if happeningNow and not allDay
                       else 'default')
 
         timeFormat, tmpTimeStr = time_format(self.decode_dtm(
             event, 'dtstart'))
-        if allDay:
+        if ev_type == ORIGINAL_OF_RECURRING_EVENTS:
+            if self.options['military']:
+                fmt = '     %10s'  # matches ' ', ' to ', 5 char date & time
+            else:
+                fmt = '     %14s'  # matches ' ', ' to ', 7 char date & time
+            self.printer.msg(fmt % 'Recurs', eventColor)
+        elif allDay:
             fmt = ' ' + timeFormat
             self.printer.msg(fmt % '', eventColor)
             if self.outputs.get('end'):
@@ -773,7 +831,7 @@ class IcalendarInterface:
             self.printer.msg(' free ' if free else ' busy ',
                              eventColor)
 
-        self.printer.msg('  %s' % self._valid_title(event).strip(),
+        self.printer.msg('  %s' % self.valid_title(event).strip(),
                          eventColor)
 
         if(self.outputs.get('location')
@@ -809,8 +867,8 @@ class IcalendarInterface:
                 xstr = "%s  Description:\n%s\n%s\n%s\n" % (
                     outputsIndent,
                     topMarker,
-                    _formatDescr(event.Decoded('description').
-                                 decode().strip(), descrIndent, box),
+                    formatDescr(event.Decoded('description').
+                                decode().strip(), descrIndent, box),
                     botMarker
                 )
             else:
@@ -819,14 +877,15 @@ class IcalendarInterface:
                 xstr = "%s  Description:\n%s\n%s\n%s\n" % (
                     outputsIndent,
                     marker,
-                    _formatDescr(event.Decoded('description').
-                                 decode().strip(), descrIndent, box),
+                    formatDescr(event.Decoded('description').
+                                decode().strip(), descrIndent, box),
                     marker
                 )
             self.printer.msg(xstr, 'default')
 
-    def _iterate_events(self, startDateTime, eventList, yearDate=True,
-                        work=None, print_count=True):
+    def iterate_events(self, startDateTime, eventList, yearDate=True,
+                       work=None, print_count=True,
+                       ev_type=ALL_EVENTS):
         r"""Iterate through events and print them
 
         Parameters
@@ -851,7 +910,7 @@ class IcalendarInterface:
                 self.printer.msg(f'\n{len(eventList)} Events Found\n',
                                  'yellow')
 
-        # 12 chars for day & length must match 'indent' in _PrintEvent
+        # 12 chars for day & length must match 'indent' in PrintEvent
         dayFormat = '\n%a %d-%b-%y' if yearDate else '\n%a %b %d  '
         day = ''
 
@@ -870,7 +929,7 @@ class IcalendarInterface:
             if yearDate or tmpDayStr != day:
                 day = prefix = tmpDayStr
 
-            self._PrintEvent(event, prefix)
+            self.PrintEvent(event, prefix, ev_type=ev_type)
 
             if work:
                 work(event)
@@ -878,7 +937,7 @@ class IcalendarInterface:
         return selected
 
     @staticmethod
-    def _to_datetime(d):
+    def to_datetime(d):
         r"""Convert date or datetime to timezone aware datetime
 
         Parameters
@@ -890,9 +949,9 @@ class IcalendarInterface:
         timezone aware datetime converted to local timezone
         """
         if isinstance(d, datetime):
-            return IcalendarInterface._display_timezone(d)
+            return IcalendarInterface.display_timezone(d)
         else:
-            return IcalendarInterface._display_timezone(
+            return IcalendarInterface.display_timezone(
                 datetime.combine(d, datetime.min.time()))
 
     def event_match(self, event, start=None, end=None,
@@ -915,23 +974,32 @@ class IcalendarInterface:
         AND
         a) the date based search (unless both start & end are None)
         """
-        event_start = self._to_datetime(event.Decoded('dtstart'))
+        event_start = self.to_datetime(event.Decoded('dtstart'))
         if 'dtend' in event:
-            event_end = self._to_datetime(event.Decoded('dtend'))
+            event_end = self.to_datetime(event.Decoded('dtend'))
         elif 'duration' in event:
-            event_end = self._to_datetime(event.Decoded('dtstart')
-                                          + event.Decoded('duration'))
+            event_end = self.to_datetime(event.Decoded('dtstart')
+                                         + event.Decoded('duration'))
         else:
             # special case where an event is punctual and has no end date
             event_end = event_start
         date_in_range = not ((start and event_end < start) or
                              (end and event_start > end))
         flags = re.I if ignore_case else 0
-        pat_match = (not pattern) or (
-            re.search(pattern, event[field], flags=flags) is not None)
+        if not pattern:
+            pat_match = True
+        elif event.decoded(field, None) is None:
+            pat_match = False
+        else:
+            s = event[field].to_ical()
+            if isinstance(s, bytes):
+                s = s.decode()
+            pat_match = (
+                re.search(pattern, s, flags=flags) is not None)
         return date_in_range and pat_match
 
-    def _search_for_events(self, start, end, pattern, field='summary'):
+    def search_for_events(self, start, end, pattern, field='summary',
+                          readonly=True, ev_type=ALL_EVENTS):
         r"""Retrieve events matching (text and/or date based) search
 
         Parameters
@@ -939,8 +1007,12 @@ class IcalendarInterface:
         start : starting date (defaults to None)
         end : ending date (defaults to None)
         pattern : regex pattern for text based searches (default: None)
-        field : field to be searched for text based searches
-                (defaults to 'summary")
+        field : String
+                field to be searched for regex (defaults to 'summary")
+        readonly: boolean
+               if True assume that the returned events will not be modified
+        ev_type: ALL_EVENTS or RECURRING_EVENTS or NON_RECURRING_EVENTS
+
         Returns
         -------
         list of matching vevents
@@ -948,18 +1020,55 @@ class IcalendarInterface:
         ignore_case = not ('no_ignore_case' in self.options and
                            self.options['no_ignore_case'])
         if start:
-            start = self._to_datetime(start)
+            start = self.to_datetime(start)
+        else:
+            start = self.default_start
         if end:
-            end = self._to_datetime(end)
-        event_list = [ev for ev in self.backend_interface.events
-                      if self.event_match(ev, start, end, pattern,
-                                          field, ignore_case)]
+            end = self.to_datetime(end)
+        else:
+            end = self.default_end
+        self.save_last_search_spec(start, end, pattern, field)
+        if self.recur_uids and ev_type != NON_RECURRING_EVENTS:
+            events = self.recurring_events.between(start, end)
+        else:
+            events = self.events
+        event_list = [ev for ev in events if self.event_match(
+            ev, start, end, pattern, field, ignore_case)]
+        if ev_type == NON_RECURRING_EVENTS:
+            event_list = [e for e in event_list
+                          if self.uid(e) not in self.recur_uids]
+        elif ev_type == RECURRING_EVENTS:
+            event_list = [e for e in event_list
+                          if self.uid(e) in self.recur_uids]
+        elif ev_type == ORIGINAL_OF_RECURRING_EVENTS:
+            uids = set(self.uid(e) for e in event_list) & self.recur_uids
+            event_list = [e for e in self.events if self.uid(e) in uids]
         event_list.sort(key=lambda x: (self.decode_dtm(x, 'dtstart'),
                                        x.Decoded('summary').decode()))
         return event_list
 
-    def _display_queried_events(self, start, end, search=None,
-                                yearDate=True, field='summary'):
+    def save_last_search_spec(self, start, end, search=None, field='summary'):
+        r"""Print search criteria for matching events
+
+        Parameters
+        ----------
+        start : datetime
+        end : datetime
+        search : string
+        field : field within event to search
+
+        """
+        spec = ""
+        if search:
+            spec += f'Search for {search} in {field} '
+        if start:
+            spec += f'From {start.strftime("%Y-%m-%d(%H:%M)")} '
+        if end:
+            spec += f'To {end.strftime("%Y-%m-%d(%H:%M)")}'
+        self.last_search_spec = spec
+
+    def display_queried_events(self, start, end, search=None, yearDate=True,
+                               field='summary', ev_type=ALL_EVENTS):
         r"""Search for matching events and print them
 
         Parameters
@@ -969,22 +1078,16 @@ class IcalendarInterface:
         search : string
         yearDate : boolean
         field : field within event to search
+        ev_type: ALL_EVENTS or RECURRING_EVENTS or NON_RECURRING_EVENTS
 
         Returns
         -------
         int: number of events printed
         """
-        event_list = self._search_for_events(start, end, search, field)
-        spec = ""
-        if search:
-            spec += f'Search for {search} in {field} '
-        if start:
-            spec += f'From {start.strftime("%Y-%m-%d(%H:%M)")} '
-        if end:
-            spec += f'To {end.strftime("%Y-%m-%d(%H:%M)")}'
-        self.printer.msg(spec)
-        return self._iterate_events(start, event_list,
-                                    yearDate=yearDate)
+        event_list = self.search_for_events(
+            start, end, pattern=search, field=field, ev_type=ev_type)
+        self.printer.msg(self.last_search_spec)
+        return self.iterate_events(start, event_list, yearDate=yearDate)
 
     def TextQuery(self, search_text='', start=None, end=None,
                   field='summary'):
@@ -1001,8 +1104,8 @@ class IcalendarInterface:
         -------
         int: number of events printed
         """
-        return self._display_queried_events(start, end, search_text,
-                                            True, field)
+        return self.display_queried_events(start, end, search_text,
+                                           True, field)
 
     def AgendaQuery(self, start=None, end=None, days=5):
         r"""Print agenda (events within next 'days' days)
@@ -1025,10 +1128,10 @@ class IcalendarInterface:
             end = (start + timedelta(days=days)).replace(
                 hour=23, minute=59, second=59, microsecond=10**6-1)
 
-        return self._display_queried_events(start, end)
+        return self.display_queried_events(start, end)
 
     def CalQuery(self, cmd, startText='', count=1):
-        r"""Process calw and calm commands by calling _GraphEvents
+        r"""Process calw and calm commands by calling GraphEvents
 
         Parameters
         ----------
@@ -1050,11 +1153,13 @@ class IcalendarInterface:
             except Exception:
                 self.printer.err_msg(
                         'Error: failed to parse start time\n')
+                if self.initial_options['stack_trace']:
+                    print_exc()
                 return
 
         # convert start date to the beginning of the week or month
         if cmd == 'calw':
-            dayNum = self._cal_monday(int(start.strftime("%w")))
+            dayNum = self.cal_monday(int(start.strftime("%w")))
             start = (start - timedelta(days=dayNum))
             end = (start + timedelta(days=(count * 7)))
         else:  # cmd == 'calm':
@@ -1076,16 +1181,18 @@ class IcalendarInterface:
             if totalDays % 7:
                 count += 1
 
-        eventList = self._search_for_events(start, end, None)
+        eventList = self.search_for_events(start, end, None)
 
-        self._GraphEvents(cmd, start, count, eventList)
+        self.GraphEvents(cmd, start, count, eventList)
 
     def sync(self):
         r"""Sync calendar
         """
         self.printer.msg("Syncing in progress\n")
         self.backend_interface.sync(self.vtimezone)
+        self.events = self.backend_interface.events.copy()
         self.backend_cache_dirty = False
+        self.setup_recurring_events()
         now = datetime.now().strftime('%Y-%m-%d %H:%M')
         self.printer.msg(f"Sync completed at {now}\n")
 
@@ -1100,35 +1207,56 @@ class IcalendarInterface:
         end : datetime
         field : string (field within event to be searched)
         """
-        self._display_queried_events(start, end, search_text, field)
-        event_list = self._search_for_events(start, end,
-                                             search_text, field)
-        nevents = len(event_list)
-        if nevents == 0:
-            return
-        elif nevents > 1:
-            response = input(
-                "Y (delete all), P (prompt), Anything else (cancel) ")
-            if not (response and response[0] in 'YP'):
-                self.printer.msg("Action cancelled\n")
-                return
-            else:
-                prompt = not response[0] == 'Y'
+        if self.recur_uids:
+            ev_types = [ORIGINAL_OF_RECURRING_EVENTS, NON_RECURRING_EVENTS]
         else:
-            prompt = True
-        deleted = 0
-        for event in event_list:
-            self._iterate_events(None, [event], print_count=False)
-            if prompt:
-                if not IcalendarInterface._confirm("Delete y/n? "):
-                    self.printer.msg("Event retained\n")
+            ev_types = [ALL_EVENTS]
+        msgs = {
+            ALL_EVENTS: "",
+            ORIGINAL_OF_RECURRING_EVENTS:
+            "Processing recurrings event firsts\n",
+            NON_RECURRING_EVENTS: "Processing non recurring events\n"
+        }
+        warn_recur = "Warning! Deleting event deletes all its occurences\n"
+        for ev_type in ev_types:
+            self.printer.msg(msgs[ev_type])
+            event_list = self.search_for_events(
+                start, end, pattern=search_text, field=field, ev_type=ev_type)
+            self.printer.msg(self.last_search_spec)
+            nevents = len(event_list)
+            if nevents == 0:
+                self.printer.msg('No events found\n'
+                                 '......................................\n')
+                continue
+            self.iterate_events(start, event_list, ev_type=ev_type)
+            self.printer.msg('......................................\n')
+            if nevents > 1:
+                if ev_type == ORIGINAL_OF_RECURRING_EVENTS:
+                    self.printer.msg(warn_recur)
+                response = input(
+                    "Y (delete all), P (prompt), Anything else (cancel) ")
+                if not (response and response[0] in 'YP'):
+                    self.printer.msg("Action cancelled\n")
                     continue
-            self.backend_interface.delete_event(
-                event.Decoded('uid').decode())
-            self.printer.msg("Event deleted\n")
-            self.backend_cache_dirty = True
-            deleted += 1
-        self.printer.msg(f'{deleted} events deleted\n')
+                else:
+                    prompt = not response[0] == 'Y'
+            else:
+                prompt = True
+            deleted = 0
+            for event in event_list:
+                self.iterate_events(None, [event], print_count=False,
+                                    ev_type=ev_type)
+                if prompt:
+                    if ev_type == ORIGINAL_OF_RECURRING_EVENTS:
+                        self.printer.msg(warn_recur)
+                    if not IcalendarInterface.confirm("Delete y/n? "):
+                        self.printer.msg("Event retained\n")
+                        continue
+                self.backend_interface.delete_event(self.uid(event))
+                self.printer.msg("Event deleted\n")
+                self.backend_cache_dirty = True
+                deleted += 1
+            self.printer.msg(f'{deleted} events deleted\n')
 
     def read_edit_args(self):
         while True:
@@ -1142,6 +1270,8 @@ class IcalendarInterface:
                 break
             except Exception as e:
                 sys.stderr.write(str(e)+'\n')
+                if self.initial_options['stack_trace']:
+                    print_exc()
             except SystemExit:
                 return None
 
@@ -1156,44 +1286,89 @@ class IcalendarInterface:
         end : datetime
         field : string (field within event to be searched)
         """
-        self._display_queried_events(start, end, search_text, field)
-        event_list = self._search_for_events(start, end,
-                                             search_text, field)
-        nevents = len(event_list)
-        if nevents == 0:
-            return
-        if nevents > 1:
-            if IcalendarInterface._confirm(
-                    "Do you want to edit all together y/n? "):
-                all_together = True
-            else:
-                all_together = False
-                if not IcalendarInterface._confirm(
-                        "Do you want to edit all y/n? "):
-                    self.printer.msg("Action cancelled\n")
-                    return
-        edited = 0
-        if nevents > 1 and all_together:
-            args = self.read_edit_args()
-            if args:
-                for event in event_list:
-                    self._iterate_events(None, [event],
-                                         print_count=False)
-                    self.add(args, event)
-                    edited += 1
-            else:
-                self.printer.msg('Event not edited\n')
+        if self.recur_uids:
+            ev_types = [ORIGINAL_OF_RECURRING_EVENTS, NON_RECURRING_EVENTS]
         else:
-            for event in event_list:
-                self._iterate_events(None, [event], print_count=False)
-                self.printer.msg(event.to_ical().decode() + '\n')
+            ev_types = [ALL_EVENTS]
+        msgs = {
+            ALL_EVENTS: "",
+            ORIGINAL_OF_RECURRING_EVENTS: "Processing recurrings events\n",
+            NON_RECURRING_EVENTS: "Processing non recurring events\n"
+        }
+        warn_recur = "Warning! Editing event modifies all its recurrences\n"
+        tot_events = 0
+        for ev_type in ev_types:
+            event_list = self.search_for_events(
+                start, end, pattern=search_text, field=field, ev_type=ev_type)
+            if not event_list:
+                continue
+            self.printer.msg(msgs[ev_type])
+            self.printer.msg(self.last_search_spec)
+            self.iterate_events(start, event_list, ev_type=ev_type)
+            self.printer.msg('......................................\n')
+            nevents = len(event_list)
+            tot_events += nevents
+            if nevents == 0:
+                continue
+            if nevents > 1:
+                if ev_type == RECURRING_EVENTS:
+                    all_together = False
+                elif IcalendarInterface.confirm(
+                        "Do you want to edit all together y/n? "):
+                    all_together = True
+                else:
+                    all_together = False
+                    if not IcalendarInterface.confirm(
+                            "Do you want to edit all individually y/n? "):
+                        self.printer.msg("Action cancelled\n")
+                        continue
+            edited = 0
+            if nevents > 1 and all_together:
+                if ev_type == ORIGINAL_OF_RECURRING_EVENTS:
+                    self.printer.msg(warn_recur)
                 args = self.read_edit_args()
                 if args:
-                    if self.add(args, event):
+                    if args.raw_ics:
+                        self.printer.msg(
+                            '--raw_ics ignored: editing multiple events\n')
+                        args.raw_ics = None
+                    for event in event_list:
+                        self.iterate_events(None, [event], print_count=False)
+                        self.add(args, event)
                         edited += 1
                 else:
                     self.printer.msg('Event not edited\n')
-        self.printer.msg(f'{edited} events edited\n')
+            else:
+                for event in event_list:
+                    self.iterate_events(None, [event], print_count=False,
+                                        ev_type=ev_type)
+                    self.printer.msg(event.to_ical().decode() + '\n')
+                    if ev_type == ORIGINAL_OF_RECURRING_EVENTS:
+                        self.printer.msg(warn_recur)
+                    args = self.read_edit_args()
+                    if args:
+                        if self.add(args, event):
+                            edited += 1
+                    else:
+                        self.printer.msg('Event not edited\n')
+            self.printer.msg(f'{edited} events edited\n')
+        if tot_events == 0:
+            self.printer.msg('No events found\n')
+
+    def preview_recurring_event(self, event):
+        cal = Calendar()
+        cal.add_component(event)
+        recurring_events = recurring_ical_events.of(cal)
+        preview = recurring_events.between(
+            self.default_start, self.now)[-self.no_past_events:]
+        self.printer.msg(
+            f"Showing up to {self.no_past_events} recent/current events")
+        self.iterate_events(None, preview, print_count=False)
+        self.printer.msg(
+            f"Showing up to {self.no_future_events} current/future events")
+        preview = recurring_events.between(
+            self.now, self.default_end)[:self.no_future_events]
+        self.iterate_events(None, preview, print_count=False)
 
     def add(self, args, original=None):
         r"""Add new event
@@ -1208,19 +1383,21 @@ class IcalendarInterface:
         args :  dict of command line or REPL arguments
         old : None or icalendar event to be replaced
         """
+        if args.raw_ics:
+            return self.raw_ics(original)
         default_event_duration = timedelta(minutes=30)
         old = None
         if original:
             old = original.copy()
             uid = old.Decoded('uid').decode()
-            old_start = self._display_timezone(old.Decoded('dtstart'))
+            old_start = self.display_timezone(old.Decoded('dtstart'))
             old_duration = (
                 ('duration' in old and old.Decoded('duration')) or
                 (old.Decoded('dtend') - old.Decoded('dtstart')))
             if not args.summary:
                 args.summary = old.Decoded('summary').decode()
             if(not args.time and not (args.start and 'T' in args.start)
-               and self._isallday(old)):
+               and self.isallday(old)):
                 args.allday = True
             day = args.day or old_start.day
             month = args.month or old_start.month
@@ -1291,8 +1468,8 @@ class IcalendarInterface:
                     minutes=args.duration or default_event_duration)
             end = ((args.end and date.fromisoformat(args.end)) or
                    (start + duration))
-        dtstamp = self._calendar_timezone(
-            self._display_timezone(datetime.now()))
+        dtstamp = self.calendar_timezone(
+            self.display_timezone(datetime.now()))
         if not old:
             event = Event()
             event.add('uid', uid)
@@ -1303,7 +1480,6 @@ class IcalendarInterface:
             s = re.sub(r'BEGIN:VALARM.*END:VALARM\s*', '',
                        old.to_ical().decode(), flags=re.DOTALL)
             event = Calendar.from_ical(s)
-        event.add('last-modified', dtstamp)
 
         def add_or_change(event, field, value):
             if field in event:
@@ -1311,9 +1487,15 @@ class IcalendarInterface:
             else:
                 event.add(field, value)
 
+        def add_recurrence(event, field, value):
+            tf = TypesFactory()
+            parsed_value = tf.from_ical(field, value)
+            add_or_change(event, field, parsed_value)
+
+        add_or_change(event, 'last-modified', dtstamp)
         add_or_change(event, 'summary', args.summary)
-        add_or_change(event, 'dtstart', self._calendar_timezone(start))
-        add_or_change(event, 'dtend', self._calendar_timezone(end))
+        add_or_change(event, 'dtstart', self.calendar_timezone(start))
+        add_or_change(event, 'dtend', self.calendar_timezone(end))
         if args.free:
             add_or_change(event, 'transp', 'TRANSPARENT')
         if args.busy:
@@ -1327,12 +1509,22 @@ class IcalendarInterface:
             add_or_change(alarm, 'action', 'DISPLAY')
             add_or_change(alarm, 'trigger',
                           timedelta(minutes=-args.alarm))
+        is_recurring_event = False
+        for k in "rrule rdate exrule exdate".split():
+            if k in vars(args):
+                v = vars(args)[k]
+                if v:
+                    add_recurrence(event, k, v)
+                    is_recurring_event = True
         if not args.no_prompt:
             self.printer.msg("{:} Event Details\n".format(
                 "Edited" if old else "New"))
             self.printer.msg(event.to_ical().decode())
-            self._iterate_events(None, [event], print_count=False)
-            if not IcalendarInterface._confirm("Proceed y/n? "):
+            if is_recurring_event:
+                self.preview_recurring_event(event)
+            else:
+                self.iterate_events(None, [event], print_count=False)
+            if not IcalendarInterface.confirm("Proceed y/n? "):
                 self.printer.msg("Action cancelled\n")
                 return False
         self.printer.msg("%s event\n" % ("Updating" if old
@@ -1343,8 +1535,51 @@ class IcalendarInterface:
             self.backend_interface.create_event(event, self.vtimezone)
         self.printer.msg("Event %s\n" % ("updated" if old
                                          else "added"))
-        self._iterate_events(None, [event], print_count=False)
+        self.iterate_events(None, [event], print_count=False)
         self.backend_cache_dirty = True
+        return True
+
+    def raw_ics(self, original=None):
+        if original:
+            uid = original.Decoded('uid').decode()
+        else:
+            uid = "%s (%s)" % (datetime.now().isoformat(),
+                               gethostname())
+        self.printer.msg("Enter raw ICS lines followed by blank line")
+        ics = ''
+        for line in sys.stdin:
+            if not line.strip():
+                break
+            ics += line
+        try:
+            event = Event.from_ical(ics)
+        except Exception:
+            self.printer.err_msg("iCalendar could not parse raw ICS")
+            raise
+        if event.errors:
+            self.printer.err_msg("iCalendar could not parse raw ICS")
+            raise Exception(str(event.errors))
+        out = event.to_ical().decode()
+
+        def lines(s):
+            return ("\n".join(s.splitlines())).splitlines(keepends=True)
+        diff = list(unified_diff(
+            lines(ics), lines(out), fromfile='Input', tofile='Parsed', n=0))
+        if diff:
+            self.printer.err_msg(
+                "ICS generated from parsed event differs from input ICS")
+            for line in diff:
+                self.printer.msg(line.strip())
+            if not IcalendarInterface.confirm("Proceed y/n? "):
+                self.printer.msg("Action cancelled\n")
+                return False
+        if 'uid' in event:
+            new_uid = event.decoded('uid').decode()
+            if original and new_uid != uid:
+                raise 'UID cannot be changed. Delete event and add new event'
+            else:
+                uid = new_uid
+        self.events[uid] = event
         return True
 
 
@@ -1368,7 +1603,7 @@ def repl(ecal=None):
         # So the first run is already over
         # ecal has been created and command line has been processed
         # So read next command from the terminal
-        parser = get_argument_parser()
+        parser = get_argument_parser(initial=False)
         s = input("Enter new command\n")
         try:
             FLAGS = parser.parse_args(shlex.split(s))
@@ -1384,7 +1619,7 @@ def repl(ecal=None):
         # IcalendarInterface (ecal) does not exist
         # So this is the first command
         # Read command from the command line
-        parser = get_argument_parser()
+        parser = get_argument_parser(initial=True)
         try:
             FLAGS = parser.parse_args()
         except Exception as e:
@@ -1408,7 +1643,7 @@ def repl(ecal=None):
         if FLAGS.command is None:
             # if no command given we simulate default command
             default_command = "agenda"
-            parser = get_argument_parser()
+            parser = get_argument_parser(initial=True)
             FLAGS = parser.parse_args(sys.argv[1:] + [default_command])
 
         # create IcalendarInterface (ecal)
@@ -1426,12 +1661,13 @@ def repl(ecal=None):
             IcalendarInterface.vtimezone = None
         ecal.interactive = FLAGS.interactive
         ecal.no_auto_sync = False
-
-    if FLAGS.locale:
-        try:
-            utils.set_locale(FLAGS.locale)
-        except ValueError as exc:
-            ecal.printer.err_msg(str(exc)+'\n')
+        if FLAGS.locale:
+            try:
+                utils.set_locale(FLAGS.locale)
+            except ValueError as exc:
+                ecal.printer.err_msg(str(exc)+'\n')
+                if ecal.initial_options['stack_trace']:
+                    print_exc()
 
     # The no_auto_sync option is available only for editing commands
     # If an edit is done with no_auto_sync and this is followed by a viewing
@@ -1455,7 +1691,8 @@ def repl(ecal=None):
         elif FLAGS.command in ['s', 'search']:
             ecal.TextQuery(FLAGS.text[0], start=FLAGS.start,
                            end=FLAGS.end,
-                           field='uid' if FLAGS.uid else 'summary')
+                           # field='uid' if FLAGS.uid else 'summary')
+                           field=FLAGS.property)
 
         elif FLAGS.command in ['a', 'add']:
             ecal.add(FLAGS)
@@ -1465,16 +1702,17 @@ def repl(ecal=None):
 
         elif FLAGS.command in ['e', 'edit']:
             ecal.edit(FLAGS.text[0], start=FLAGS.start, end=FLAGS.end,
-                      field='uid' if FLAGS.uid else 'summary')
+                      # field='uid' if FLAGS.uid else 'summary')
+                      field=FLAGS.property)
 
         elif FLAGS.command in ['d', 'delete']:
             ecal.delete(FLAGS.text[0], start=FLAGS.start,
-                        end=FLAGS.end,
-                        field='uid' if FLAGS.uid else 'summary')
+                        # field='uid' if FLAGS.uid else 'summary')
+                        field=FLAGS.property)
 
         elif FLAGS.command in ['q', 'quit']:
             if(ecal.backend_cache_dirty and ecal.no_auto_sync
-               and not IcalendarInterface._confirm(
+               and not IcalendarInterface.confirm(
                    "Changes made in calendar not yet synced. Quit y/n? ")):
                 pass
             else:
@@ -1482,7 +1720,7 @@ def repl(ecal=None):
 
     except Exception as exc:
         ecal.printer.err_msg(str(exc)+'\n')
-        if ecal.options['stack_trace']:
+        if ecal.initial_options['stack_trace']:
             print_exc()
         return ecal if ecal.interactive else None
 

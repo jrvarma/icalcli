@@ -119,6 +119,16 @@ def get_end_time_from_str(when):
 def get_time_from_str(when, start=True):
     """Convert string to time (fuzzy matching with parsedatetime)
     Change datetime to beginning/end of day when start is True/False
+
+    Example strings parsed by fuzzy_date_parse:
+    3d, 2w, 1y for three days, two weeks and one year from today
+    2 months cannot be abbreviated as 2m which is two minutes
+    -5 d, -4 w, -1 y (note: space is required after negative number)
+    3d ago, 3w ago, 1 month ago
+    last Fri, last month, last year, last Aug, last August
+    next week, next month, next year, next August
+    next August means end of August, but 1 month means same day next month
+    decimals like -0.25 y are allowed
     """
 
     struct, result = fuzzy_date_parse(when)
