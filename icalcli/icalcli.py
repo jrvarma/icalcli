@@ -155,8 +155,8 @@ class IcalendarInterface:
             self.events = list(
                 {self.uid(e): e for e in self.events}.values())
             self.readonly = True
-            raise Exception('Duplicate UIDs found. '
-                            'Calendar deduplicated and set to readonly')
+            self.printer.err_msg('Duplicate UIDs found. '
+                                 'Calendar deduplicated and set to readonly\n')
         else:
             self.readonly = False
 
@@ -999,7 +999,7 @@ class IcalendarInterface:
         return date_in_range and pat_match
 
     def search_for_events(self, start, end, pattern, field='summary',
-                          readonly=True, ev_type=ALL_EVENTS):
+                          ev_type=ALL_EVENTS):
         r"""Retrieve events matching (text and/or date based) search
 
         Parameters
@@ -1009,8 +1009,6 @@ class IcalendarInterface:
         pattern : regex pattern for text based searches (default: None)
         field : String
                 field to be searched for regex (defaults to 'summary")
-        readonly: boolean
-               if True assume that the returned events will not be modified
         ev_type: ALL_EVENTS or RECURRING_EVENTS or NON_RECURRING_EVENTS
 
         Returns
@@ -1207,6 +1205,8 @@ class IcalendarInterface:
         end : datetime
         field : string (field within event to be searched)
         """
+        if self.readonly:
+            raise Exception("Read-only calendar cannot be modified")
         if self.recur_uids:
             ev_types = [ORIGINAL_OF_RECURRING_EVENTS, NON_RECURRING_EVENTS]
         else:
@@ -1286,6 +1286,8 @@ class IcalendarInterface:
         end : datetime
         field : string (field within event to be searched)
         """
+        if self.readonly:
+            raise Exception("Read-only calendar cannot be modified")
         if self.recur_uids:
             ev_types = [ORIGINAL_OF_RECURRING_EVENTS, NON_RECURRING_EVENTS]
         else:
@@ -1383,6 +1385,8 @@ class IcalendarInterface:
         args :  dict of command line or REPL arguments
         old : None or icalendar event to be replaced
         """
+        if self.readonly:
+            raise Exception("Read-only calendar cannot be modified")
         if args.raw_ics:
             return self.raw_ics(original)
         default_event_duration = timedelta(minutes=30)
