@@ -5,7 +5,7 @@ from pathlib import Path
 
 class ICSInterface:
     def __init__(self, filename, backup=False):
-        r"""Initialize EtesyncInterface
+        r"""Initialize ICSInterface
 
         Parameters
         ----------
@@ -26,8 +26,8 @@ class ICSInterface:
                 return False
             else:
                 return True
-        self.ical = Calendar.from_ical(self.ics)
-        self.events = [ev for ev in self.ical.walk('VEVENT')
+        self.calendar = Calendar.from_ical(self.ics)
+        self.events = [ev for ev in self.calendar.walk('VEVENT')
                        if check_event(ev)]
         self.cache_events = {}
         for ev in self.events:

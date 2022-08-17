@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(name='icalcli',
-      version='1.0.1',
+      version='1.0.2',
       maintainer='Jayanth R. Varma',
       maintainer_email='jrvarma@gmail.com',
       description='Icalendar Calendar Command Line Interface',
@@ -16,7 +16,8 @@ setup(name='icalcli',
       install_requires=[
           'python-dateutil',
           'parsedatetime',
-          'icalendar'
+          'icalendar',
+          'recurring_ical_events',
       ],
       extras_require={
           'parsedatetime': ["parsedatetime"],

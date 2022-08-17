@@ -1,5 +1,5 @@
 __program__ = 'icalcli'
-__version__ = 'v1.0.0'
+__version__ = 'v1.0.2'
 __author__ = 'Jayanth Varma (modified gcalcli by Eric Davis et al.)'
 from icalcli.icalcli import IcalendarInterface  # noqa F401
 try:
