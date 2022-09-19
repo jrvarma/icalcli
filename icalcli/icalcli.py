@@ -1710,7 +1710,7 @@ def repl(ecal=None):
                       field=FLAGS.property)
 
         elif FLAGS.command in ['d', 'delete']:
-            ecal.delete(FLAGS.text[0], start=FLAGS.start,
+            ecal.delete(FLAGS.text[0], start=FLAGS.start, end=FLAGS.end,
                         # field='uid' if FLAGS.uid else 'summary')
                         field=FLAGS.property)
 
