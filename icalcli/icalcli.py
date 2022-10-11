@@ -1392,7 +1392,8 @@ class IcalendarInterface:
         default_event_duration = timedelta(minutes=30)
         old = None
         if original:
-            old = original.copy()
+            # simulate old = original.deepcopy()
+            old = Calendar.from_ical(original.to_ical().decode())
             uid = old.Decoded('uid').decode()
             old_start = self.display_timezone(old.Decoded('dtstart'))
             old_duration = (

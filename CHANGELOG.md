@@ -1,3 +1,6 @@
+# 1.0.4 released 2022-10-11
+Bug fixes
+
 # 1.0.3 released 2022-09-19
 Bug fixes
 
