@@ -95,6 +95,7 @@ class IcalendarInterface:
     UNIWIDTH = {'W': 2, 'F': 2, 'N': 1, 'Na': 1, 'H': 1, 'A': 1}
     backend_cache_dirty = False
     default_outputs = ['end', 'alarms', 'freebusy', 'location']
+    default_graphical_outputs = ['end', 'alarms']
     no_past_events = 5
     no_future_events = 10
 
@@ -104,6 +105,7 @@ class IcalendarInterface:
         self.cals = []
         self.printer = printer
         self.initial_options = options
+        self.initial_options['stack_trace'] = True
         self.set_options(options)
         self.add_parser = add_parser
         self.backend_interface = backend_interface
@@ -128,6 +130,10 @@ class IcalendarInterface:
         for key in self.default_outputs:
             if key not in self.outputs:
                 self.outputs[key] = True
+        self.graphical_outputs = options.get('outputs', {})
+        for key in self.default_graphical_outputs:
+            if key not in self.outputs:
+                self.graphical_outputs[key] = True
 
     def set_now(self):
         # This command is run at initiaization, but it should also be
@@ -157,6 +163,12 @@ class IcalendarInterface:
             self.readonly = True
             self.printer.err_msg('Duplicate UIDs found. '
                                  'Calendar deduplicated and set to readonly\n')
+        elif (
+                    hasattr(self.backend_interface, 'readonly')
+                    and self.backend_interface.readonly
+        ):
+            self.readonly = True
+            self.printer.err_msg('Calendar backend interface is readonly\n')
         else:
             self.readonly = False
 
@@ -323,7 +335,7 @@ class IcalendarInterface:
         """
         return e_start < time_point and e_end >= time_point
 
-    def format_title(self, event, allday=False):
+    def event_summary(self, event, allday=False):
         r"""Return event title (summary and start time)
 
         Parameters
@@ -335,19 +347,52 @@ class IcalendarInterface:
         -------
         string
         """
+        def fmt_time(field):
+            if self.options['military']:
+                return self.decode_dtm(event, field).strftime("%H:%M")
+            else:
+                return (
+                    self.decode_dtm(event, field).strftime("%I:%M")
+                    .lstrip('0') +
+                    self.decode_dtm(event, field).strftime('%p') .lower())
         titlestr = self.valid_title(event)
         if allday:
-            return titlestr
-        elif self.options['military']:
-            return ' '.join(
-                [self.decode_dtm(event, 'dtstart').strftime("%H:%M"),
-                 titlestr])
+            summary = titlestr
         else:
-            return ' '.join([
-                self.decode_dtm(event, 'dtstart').strftime("%I:%M")
-                .lstrip('0') +
-                self.decode_dtm(event, 'dtstart').strftime('%p')
-                .lower(), titlestr])
+            tm = fmt_time('dtstart')
+            if self.graphical_outputs.get('end'):
+                tm += " - " + fmt_time('dtend')
+            summary = tm + " " + titlestr
+        if self.graphical_outputs.get('alarms'):
+            alarms = event.walk('valarm')
+            if alarms:
+                if isinstance(alarms[0].Decoded('trigger'), timedelta):
+                    minutes = -(alarms[0].Decoded('trigger')
+                                .total_seconds()/60)
+                    summary += ' AL:%.0fm' % minutes
+                else:
+                    summary += ' AL: ??'
+        if self.graphical_outputs.get('freebusy'):
+            free = ('transp' in event and
+                    event.Decoded('transp').decode() == 'TRANSPARENT')
+            summary += (' free ' if free else ' busy ')
+        if (
+                self.graphical_outputs.get('location')
+                and 'location' in event
+                and event.Decoded('location').decode().strip()
+        ):
+            summary += " [%s]" % (event.Decoded('location').
+                                  decode().strip())
+        if self.graphical_outputs.get('uid'):
+            summary += " <%s>" % (event.Decoded('uid').decode().strip())
+        # if (
+        #         self.graphical_outputs.get('description')
+        #         and 'description' in event
+        #         and event.Decoded('description').decode().strip()
+        #         and self.outputs.get('description')
+        # ):
+        #     summary += event.Decoded('description'). decode().strip()
+        return summary
 
     def get_week_events(self, start_dt, end_dt, event_list):
         r"""Returns all events during a week (start_dt to end_dt)
@@ -401,9 +446,11 @@ class IcalendarInterface:
                 force_now_marker = False
 
                 if to_show_now:
-                    if(self.now >= event_start_date
-                       and self.now <= event_end_date
-                       and not event_allday):
+                    if (
+                            self.now >= event_start_date
+                            and self.now <= event_end_date
+                            and not event_allday
+                    ):
                         # line marker is during event (recolor event)
                         force_now_marker = True
                         to_show_now = False
@@ -429,7 +476,7 @@ class IcalendarInterface:
                     event_color = 'default'
                 # NOTE(slawqo): for all day events it's necessary to
                 # add event to more than one day in week_events
-                titlestr = self.format_title(event, allday=event_allday)
+                summary = self.event_summary(event, allday=event_allday)
                 if event_allday and event_start_date < event_end_date:
                     if event_end_date >= end_dt:
                         end_daynum = 6
@@ -444,12 +491,12 @@ class IcalendarInterface:
                     #     event_daynum = 0
                     for day in range(start_daynum, end_daynum + 1):
                         week_events[day].append(
-                            EventTitle('\n' + titlestr, event_color))
+                            EventTitle('\n' + summary, event_color))
                 else:
                     # newline and empty string are the keys to turn off
                     # coloring
                     week_events[event_daynum].append(
-                            EventTitle('\n' + titlestr, event_color))
+                            EventTitle('\n' + summary, event_color))
         return week_events
 
     def printed_len(self, string):
@@ -509,8 +556,10 @@ class IcalendarInterface:
         words = _u(string).split()
         for i, word in enumerate(words):
             word_len = self.printed_len(word)
-            if ((cur_print_len + word_len + print_len
-                 ) >= self.options['cal_width']):
+            if (
+                    (cur_print_len + word_len + print_len
+                     ) >= self.options['cal_width']
+            ):
                 cut_idx = len(' '.join(words[:i]))
                 # if the  word is too long,
                 # we cannot cut between words
@@ -553,7 +602,7 @@ class IcalendarInterface:
 
         Parameters
         ----------
-        cmd : Command ('calw' or 'calm' for week and month)
+        cmd : Command ('calw', 'cal5w'  or 'calm' for week, 5weeks and month)
         startDateTime : datetime (start date)
         count : int (number of weeks or months)
         eventList : list of icalendar events
@@ -637,7 +686,7 @@ class IcalendarInterface:
         for i in range(count):
             # create and print the date line for a week
             for j in range(days):
-                if cmd == 'calw':
+                if cmd in ('calw', 'cal5w'):
                     d = (startWeekDateTime +
                          timedelta(days=j)).strftime("%d %b")
                 else:  # (cmd == 'calm'):
@@ -648,9 +697,11 @@ class IcalendarInterface:
                         d = ''
                 tmpDateColor = self.options['color_date']
 
-                if (self.now.strftime("%d%b%Y") == (
-                        (startWeekDateTime + timedelta(days=j))
-                        .strftime("%d%b%Y"))):
+                if (
+                        self.now.strftime("%d%b%Y") == (
+                            (startWeekDateTime + timedelta(days=j))
+                            .strftime("%d%b%Y"))
+                ):
                     tmpDateColor = self.options['color_now_marker']
                     d += " **"
 
@@ -834,9 +885,11 @@ class IcalendarInterface:
         self.printer.msg('  %s' % self.valid_title(event).strip(),
                          eventColor)
 
-        if(self.outputs.get('location')
-           and 'location' in event
-           and event.Decoded('location').decode().strip()):
+        if (
+                self.outputs.get('location')
+                and 'location' in event
+                and event.Decoded('location').decode().strip()
+        ):
             xstr = " [%s]" % (event.Decoded('location').
                               decode().strip())
             self.printer.msg(xstr, 'default')
@@ -847,8 +900,10 @@ class IcalendarInterface:
 
         self.printer.msg('\n')
 
-        if(self.outputs.get('description') and 'description' in event
-           and event.Decoded('description').decode().strip()):
+        if (
+                self.outputs.get('description') and 'description' in event
+                and event.Decoded('description').decode().strip()
+        ):
             descrIndent = outputsIndent + '  '
             box = True  # leave old non-box code for option later
             if box:
@@ -915,8 +970,10 @@ class IcalendarInterface:
         day = ''
 
         for event in eventList:
-            if(self.options['ignore_started'] and
-               (self.decode_dtm(event, 'dtstart') < self.now)):
+            if (
+                    self.options['ignore_started'] and
+                    (self.decode_dtm(event, 'dtstart') < self.now)
+            ):
                 continue
             if self.options['ignore_declined'] and self._DeclinedEvent(
                     event):
@@ -1158,8 +1215,14 @@ class IcalendarInterface:
         # convert start date to the beginning of the week or month
         if cmd == 'calw':
             dayNum = self.cal_monday(int(start.strftime("%w")))
-            start = (start - timedelta(days=dayNum))
-            end = (start + timedelta(days=(count * 7)))
+            start -= timedelta(days=dayNum)
+            weeks = count
+            end = (start + timedelta(days=(weeks * 7)))
+        elif cmd == 'cal5w':
+            dayNum = self.cal_monday(int(start.strftime("%w")))
+            start -= timedelta(days=(dayNum + count * 7))
+            weeks = 2 * count + 1
+            end = (start + timedelta(days=(weeks * 7)))
         else:  # cmd == 'calm':
             start = (start - timedelta(days=(start.day - 1)))
             endMonth = (start.month + 1)
@@ -1175,13 +1238,13 @@ class IcalendarInterface:
                 if offsetDays < 0:
                     offsetDays = 6
             totalDays = (daysInMonth + offsetDays)
-            count = int(totalDays / 7)
+            weeks = int(totalDays / 7)
             if totalDays % 7:
-                count += 1
+                weeks += 1
 
         eventList = self.search_for_events(start, end, None)
 
-        self.GraphEvents(cmd, start, count, eventList)
+        self.GraphEvents(cmd, start, weeks, eventList)
 
     def sync(self):
         r"""Sync calendar
@@ -1401,8 +1464,10 @@ class IcalendarInterface:
                 (old.Decoded('dtend') - old.Decoded('dtstart')))
             if not args.summary:
                 args.summary = old.Decoded('summary').decode()
-            if(not args.time and not (args.start and 'T' in args.start)
-               and self.isallday(old)):
+            if (
+                    not args.time and not (args.start and 'T' in args.start)
+                    and self.isallday(old)
+            ):
                 args.allday = True
             day = args.day or old_start.day
             month = args.month or old_start.month
@@ -1690,6 +1755,10 @@ def repl(ecal=None):
             ecal.CalQuery(
                     'calw', count=FLAGS.weeks, startText=FLAGS.start)
 
+        elif FLAGS.command in ['5w', 'cal5w']:
+            ecal.CalQuery(
+                    'cal5w', count=FLAGS.weeks, startText=FLAGS.start)
+
         elif FLAGS.command in ['m', 'calm']:
             ecal.CalQuery('calm', startText=FLAGS.start)
 
@@ -1716,9 +1785,11 @@ def repl(ecal=None):
                         field=FLAGS.property)
 
         elif FLAGS.command in ['q', 'quit']:
-            if(ecal.backend_cache_dirty and ecal.no_auto_sync
-               and not IcalendarInterface.confirm(
-                   "Changes made in calendar not yet synced. Quit y/n? ")):
+            if (
+                    ecal.backend_cache_dirty and ecal.no_auto_sync
+                    and not IcalendarInterface.confirm(
+                        "Changes made in calendar not yet synced. Quit y/n? ")
+            ):
                 pass
             else:
                 ecal.interactive = False

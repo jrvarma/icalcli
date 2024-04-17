@@ -263,6 +263,11 @@ def get_argument_parser(initial=True):
         parents=[outputs_parser, output_parser, cal_query_parser])
     calw.add_argument('-n', "--weeks", type=int, default=2, nargs="?")
 
+    cal5w = sub.add_parser(
+        "cal5w", aliases=['5w'],
+        parents=[outputs_parser, output_parser, cal_query_parser])
+    cal5w.add_argument('-n', "--weeks", type=int, default=2, nargs="?")
+
     sub.add_parser(
         "calm", aliases=['m'],
         parents=[outputs_parser, output_parser, cal_query_parser])

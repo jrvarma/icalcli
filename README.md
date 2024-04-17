@@ -49,6 +49,7 @@ python setup.py install
     edit (e)               edit calendar events
     agenda (g)             get an agenda for a time period
     calw (w)               get a week-based agenda in calendar format
+    cal5w (5w)             get this week / 2 past / 2 future weeks agenda in calendar format
     calm (m)               get a month agenda in calendar format
     add (a)                add a detailed event to the calendar
     search (s)             (regex) search for events 
@@ -70,6 +71,15 @@ backend_interface = ICSInterface("/path/to/ics-file")
 
 ```
 
+#### Example configuration for multiple readonly file_backend
+
+```
+from icalcli import ICSInterface
+
+backend_interface = ICSInterface(["/path/to/ics-file-1", "/path/to/ics-file-2"])
+
+```
+
 #### Example configuration for etesync_backend
 
 This configuration assumes that all the credentials are stored in a plain text (`json`) file. In practice, you would use a more secure storage (perhaps, the `Gnome keyring`) or just read it from the terminal.
@@ -88,6 +98,16 @@ backend_interface = EtesyncInterface(
     base64.decodebytes(c['cipher_key'].encode('ascii')))
 ```
 See the [Example code](https://github.com/jrvarma/icalcli/issues/1#issuecomment-979851222) for getting the  `uid` and `authToken` for the `etesync` calendar.
+
+## Recurring events and default search period
+
+`icalcli` understands the `RRULE`, `RDATE`, `EXRULE`, `EXDATE` elements of the `icalendar` specification. These elements can be added while creating or editing events using `--rrule`, `--rdate`, `--exrule` and `--exdate` options.
+
+In most views, the instances of the recurring event are displayed. Since a recurring event can have an unlimited number of instances, searches with no start or end date can produce an unending series of events. By default therefore searches with no start or end date are limited to the previous five years and following five years. These defaults can be changed using the options ` --default_past_years` and `--default_future_years`
+
+## Raw ICS
+
+The `icalendar` specification is quite large and complex, and `icalcli` implements only the most common parts of this specification. It is possible to use the `--raw_ics` option to create/edit event using raw ICS text. 
 
 ## Screenshots
 

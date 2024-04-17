@@ -1,3 +1,9 @@
+# 1.0.5 released 2024-04-17
+
+* Added `cal5w` command to provide current week, two past weeks and two future weeks in a calendar format. 
+* Introduced option to get more event details (end time, alarm, location, free/busy) in week and calendar views.
+* Extended the file backend to allow multiple `ics` files in read only mode.
+
 # 1.0.4 released 2022-10-11
 Bug fixes
 

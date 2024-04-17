@@ -12,10 +12,14 @@ class ICSInterface:
         filename : path to ics file
         backup: boolean whether to back up old file before overwriting
         """
-        self.filepath = Path(filename).resolve()
+        if isinstance(filename, list):
+            self.filepaths = [Path(f).resolve() for f in filename]
+            self.readonly = True
+        else:
+            self.filepaths = [Path(filename).resolve()]
+            self.readonly = False
         self.backup = backup
-        with open(self.filepath, 'r') as fp:
-            self.ics = fp.read()
+        self.ics = []
         self.all_events()
 
     def all_events(self):
@@ -26,13 +30,20 @@ class ICSInterface:
                 return False
             else:
                 return True
-        self.calendar = Calendar.from_ical(self.ics)
-        self.events = [ev for ev in self.calendar.walk('VEVENT')
-                       if check_event(ev)]
+        self.events = []
         self.cache_events = {}
-        for ev in self.events:
-            uid = ev.decoded('uid').decode()
-            self.cache_events[uid] = ev
+        filecount = 0
+        for path in self.filepaths:
+            with open(path, 'r') as fp:
+                cal = Calendar.from_ical(fp.read())
+            events = [ev for ev in cal.walk('VEVENT') if check_event(ev)]
+            self.events += events
+            for ev in events:
+                uid = ev.decoded('uid').decode()
+                if len(self.filepaths) > 1:
+                    uid = f"File{filecount}:{uid}"
+                self.cache_events[uid] = ev
+            filecount += 1
 
     def create_event(self, event, vtimezone=None):
         uid = event.decoded('uid').decode()
@@ -46,6 +57,8 @@ class ICSInterface:
         del self.cache_events[uid]
 
     def sync(self, vtimezone=None):
+        if self.readonly:
+            return
         if self.backup:
             with NamedTemporaryFile(mode='w',
                                     suffix=self.filepath.suffix,
