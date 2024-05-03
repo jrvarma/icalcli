@@ -385,13 +385,13 @@ class IcalendarInterface:
                                   decode().strip())
         if self.graphical_outputs.get('uid'):
             summary += " <%s>" % (event.Decoded('uid').decode().strip())
-        # if (
-        #         self.graphical_outputs.get('description')
-        #         and 'description' in event
-        #         and event.Decoded('description').decode().strip()
-        #         and self.outputs.get('description')
-        # ):
-        #     summary += event.Decoded('description'). decode().strip()
+        if (
+                self.graphical_outputs.get('description')
+                and 'description' in event
+                and event.Decoded('description').decode().strip()
+                and self.outputs.get('description')
+        ):
+            summary += event.Decoded('description'). decode().strip()
         return summary
 
     def get_week_events(self, start_dt, end_dt, event_list):
@@ -551,10 +551,11 @@ class IcalendarInterface:
         -------
         int: where to cut the word
         """
-        print_len = 0
+        # print_len = 0
 
         words = _u(string).split()
         for i, word in enumerate(words):
+            print_len = self.printed_len(' '.join(words[:i]))
             word_len = self.printed_len(word)
             if (
                     (cur_print_len + word_len + print_len
@@ -566,7 +567,7 @@ class IcalendarInterface:
                 if cut_idx == 0:
                     return self.word_cut(word)
                 return (print_len, cut_idx)
-            print_len += word_len + i  # +i for the space between words
+            # print_len += word_len + i  # +i for the space between words
         return (print_len, len(' '.join(words[:i])))
 
     def get_cut_index(self, event_string):
@@ -741,7 +742,6 @@ class IcalendarInterface:
                         curr_event.title)
                     padding = ' ' * (self.options['cal_width']
                                      - print_len)
-
                     self.printer.msg(
                             curr_event.title[:cut_idx] + padding,
                             curr_event.color)
