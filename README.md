@@ -33,6 +33,12 @@ The two included backends would also be useful to those who wish to write their 
 pip install icalcli
 ```
 
+or via `pipx`:
+
+```sh
+pipx install icalcli
+```
+
 ### Install from source
 
 ```sh
@@ -40,6 +46,13 @@ git clone https://github.com/jrvarma/icalcli.git
 cd icalcli
 python setup.py install
 ```
+
+or via `pipx`:
+
+```sh
+pipx install . --editable
+```
+
 ## Usage
 
 ### Command line arguments

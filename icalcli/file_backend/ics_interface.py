@@ -61,9 +61,9 @@ class ICSInterface:
             return
         if self.backup:
             with NamedTemporaryFile(mode='w',
-                                    suffix=self.filepath.suffix,
-                                    prefix=self.filepath.name,
-                                    dir=self.filepath.parent,
+                                    suffix=self.filepaths[0].suffix,
+                                    prefix=self.filepaths[0].name,
+                                    dir=self.filepaths[0].parent,
                                     delete=False) as fp:
                 fp.write(self.ics)
         cal = Calendar()
@@ -72,6 +72,6 @@ class ICSInterface:
         if vtimezone:
             cal.add_component(vtimezone)
         self.ics = cal.to_ical().decode()
-        with open(self.filepath, 'w') as fp:
+        with open(self.filepaths[0], 'w') as fp:
             fp.write(self.ics)
         self.all_events()
