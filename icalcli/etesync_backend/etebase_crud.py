@@ -31,6 +31,8 @@ from time import sleep, time
 
 
 class EtebaseCRUD:
+    sync_after_edit = False  # add/update/delete are on server not on cache
+
     def __init__(self, user, server_url, password, calendar_uid, silent=True):
         """Initialize
 
@@ -48,48 +50,52 @@ class EtebaseCRUD:
         self.item_mgr = col_mgr.get_item_manager(collection)
         self.sync(silent)
 
-    def create_event(self, event, uid):
+    def create_event(self, event, event_uid):
         """Create event
 
         Parameters
         ----------
         event : iCalendar file as bytes
         (calendar containing one event to be added)
+        event_uid : uid of event to be updated
         """
         item = self.item_mgr.create(
             {
-                "name": uid,
+                "name": event_uid,
                 "mtime": int(round(time() * 1000))
             },
             event
         )
         self.item_mgr.batch([item])
 
-    def update_event(self, event, uid):
+    def update_event(self, event, event_uid):
         """Edit event
 
         Parameters
         ----------
         event : iCalendar file as bytes
         (calendar containing one event to be updated)
-        uid : uid of event to be updated
+        event_uid : uid of event to be updated
         """
-        item = self.item_mgr.fetch(uid)
+        item = self.item_mgr.fetch(self.item_uid[event_uid])
+        assert item.meta['name'] == event_uid
         item.content = event
         self.item_mgr.batch([item])
 
-    def retrieve_event(self, uid):
+    def retrieve_event(self, event_uid):
         r"""Retrieve event by uid
 
         Parameters
         ----------
-        uid : uid of event to be retrieved
+        event_uid : uid of event to be retrieved
 
         Returns
         -------
         iCalendar file (as a string)
         """
-        return self.item_mgr.fetch(uid).content.decode()
+        item = self.item_mgr.fetch(self.item_uid[event_uid])
+        assert item.meta['name'] == event_uid
+        return item.content.decode()
 
     def all_events(self):
         """Retrieve all events in calendar
@@ -98,16 +104,18 @@ class EtebaseCRUD:
         -------
         List of iCalendar files (as strings)
         """
-        return [e.content.decode() for e in self.items.data if not e.deleted]
+        self.item_uid = {e.meta['name']: e.uid for e in self.items}
+        return [e.content.decode() for e in self.items if not e.deleted]
 
-    def delete_event(self, uid):
+    def delete_event(self, event_uid):
         """Delete event and sync calendar
 
         Parameters
         ----------
         uid : uid of event to be deleted
         """
-        item = self.item_mgr.fetch(uid)
+        item = self.item_mgr.fetch(self.item_uid[event_uid])
+        assert item.meta['name'] == event_uid
         item.delete()
         self.item_mgr.batch([item])
 
@@ -121,16 +129,24 @@ class EtebaseCRUD:
         silent or print("Syncing with server. Please wait")
         msg = "etebase fetch attempt {:} failed. Will retry after {:} seconds"
         delay = 5
-        synced = False
+        stoken = None
+        done = False
+        chunk = 100
+        self.items = []
         for i in range(5):
             try:
-                self.items = self.item_mgr.list(FetchOptions().limit(10**6))
-                synced = True
+                while not done:
+                    items = self.item_mgr.list(
+                        FetchOptions().stoken(stoken).limit(chunk))
+                    self.items += [item for item in items.data]
+                    stoken = items.stoken
+                    done = items.done
+                    silent or print(".", end='')
                 break
             except Exception:
                 silent or print(msg.format(i+1, delay))
                 sleep(delay)
-        if synced:
+        if done:
             silent or print("Syncing completed.")
             self.all_events()
         else:

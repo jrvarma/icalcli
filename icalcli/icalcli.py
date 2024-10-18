@@ -1317,7 +1317,8 @@ class IcalendarInterface:
                         continue
                 self.backend_interface.delete_event(self.uid(event))
                 self.printer.msg("Event deleted\n")
-                self.backend_cache_dirty = True
+                if self.backend_interface.sync_after_edit:
+                    self.backend_cache_dirty = True
                 deleted += 1
             self.printer.msg(f'{deleted} events deleted\n')
 
@@ -1606,7 +1607,8 @@ class IcalendarInterface:
         self.printer.msg("Event %s\n" % ("updated" if old
                                          else "added"))
         self.iterate_events(None, [event], print_count=False)
-        self.backend_cache_dirty = True
+        if self.backend_interface.sync_after_edit:
+            self.backend_cache_dirty = True
         return True
 
     def raw_ics(self, original=None):
@@ -1721,6 +1723,14 @@ def repl(ecal=None):
             add_parser=get_add_parser(),
             backend_interface=config.backend_interface,
             printer=printer, **vars(FLAGS))
+        if not hasattr(ecal.backend_interface, "sync_after_edit"):
+            ecal.backend_interface.sync_after_edit = True
+            # The file and etesync 1.0 backends operate on the cache and
+            # they sync to server only when sync() is called
+            # The etebase or etesync 2.0 backend works directly on server
+            # and requires sync() only if server updated from another device
+            # EtebaseCRUD has the attribute sync_after_edit = False
+            # If attribute is missing, we assume it is True
         if hasattr(config, 'timezones') and 'tz' in config.timezones:
             IcalendarInterface.calendar_tz = config.timezones['tz']
         else:

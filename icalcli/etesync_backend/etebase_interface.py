@@ -26,9 +26,9 @@ from icalendar import Calendar
 # etes.create_event, etes.retrieve_event,
 # etes.update_event and etes.delete_event
 
-# The calling program must explicitly call etes.sync when needed. For example:
-# (a) if the server has been updated from another device
-# (b) after any CRUD operation other than Retrieve
+# The calling program must explicitly call sync() when the server
+# has been updated from another device
+# sync() is not needed after any CRUD operation
 
 # No exception handling is done. That is left to the calling program.
 
@@ -60,7 +60,8 @@ class EtebaseInterface (EtebaseCRUD):
         event : event to be added (iCalendar object)
         """
         ics = self.event_to_ics(event, vtimezone)
-        EtebaseCRUD.create_event(self, ics)
+        uid = event.decoded('uid').decode()
+        EtebaseCRUD.create_event(self, ics, uid)
 
     def update_event(self, event, vtimezone=None):
         r"""Update event
