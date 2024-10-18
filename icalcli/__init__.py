@@ -4,7 +4,9 @@ __author__ = 'Jayanth Varma (modified gcalcli by Eric Davis et al.)'
 from icalcli.icalcli import IcalendarInterface  # noqa F401
 try:
     from icalcli.etesync_backend.etesync_crud import EtesyncCRUD  # noqa F401
-    from icalcli.etesync_backend.etesync_interface import EtesyncInterface  # noqa F401
+    from icalcli.etesync_backend.etesync_interface import EtesyncInterface  # noqa F
+    from icalcli.etesync_backend.etebase_crud import EtebaseCRUD  # noqa F401
+    from icalcli.etesync_backend.etebase_interface import EtebaseInterface  # noqa F401
 except ImportError:
     pass
 

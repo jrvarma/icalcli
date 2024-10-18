@@ -6,7 +6,7 @@
 
 Unlike [gcalcli](https://github.com/insanum/gcalcli) which is tied to Google Calendar, `icalcli` is agnostic to (abstracts away from) the actual backend calendar service. It relies on a backend interface which interacts with the backend calendar to perform all the CRUD (Create, Retrieve, Update and Delete) operations on the actual calendar. The package includes two backends:
 
-* The `etesync_backend` subpackage provides a backend interface to the [EteSync](https://www.etesync.com/) calendar. In fact, `icalcli` was created primarily to provide a command line interface to my self hosted `EteSync` calendar.
+* The `etesync_backend` subpackage provides a backend interface to the [EteSync](https://www.etesync.com/) calendar (versions 1.0 and 2.0). In fact, `icalcli` was created primarily to provide a command line interface to my self hosted `EteSync` calendar.
 
 * The `file_backend` subpackage provides a backend interface to a calendar contained in a local `ics` file. This is useful as a viewer/editor of `ics` files. It is also useful to try out `icalci` without having any other backend configured.
 
@@ -93,7 +93,7 @@ backend_interface = ICSInterface(["/path/to/ics-file-1", "/path/to/ics-file-2"])
 
 ```
 
-#### Example configuration for etesync_backend
+#### Example configuration for etesync_backend (etesync 1.0)
 
 This configuration assumes that all the credentials are stored in a plain text (`json`) file. In practice, you would use a more secure storage (perhaps, the `Gnome keyring`) or just read it from the terminal.
 
@@ -111,6 +111,34 @@ backend_interface = EtesyncInterface(
     base64.decodebytes(c['cipher_key'].encode('ascii')))
 ```
 See the [Example code](https://github.com/jrvarma/icalcli/issues/1#issuecomment-979851222) for getting the  `uid` and `authToken` for the `etesync` calendar.
+
+#### Example configuration for etebase_backend (etesync 2.0)
+
+This configuration assumes that all the credentials are stored in a plain text (`json`) file. In practice, you would use a more secure storage (perhaps, the `Gnome keyring`) or just read it from the terminal.
+
+```
+from icalcli import EtebaseInterface
+import json
+
+conf_file = '/path/to/json-file'
+with open(conf_file, 'r') as fp:
+    c = json.load(fp)
+
+backend_interface = EtebaseInterface(c['user'], c['server_url'], c['password'],
+                                     c['calendar_uid'], silent=False)
+```
+
+The `calendar_uid` can be obtained using the following code. This code assumes that the `dict c` has been populated with the credentials from the `json` file as above.
+
+```
+from etebase import Client, Account, FetchOptions
+
+client = Client(c['user'], c['server_url'])
+etebase = Account.login(client, c['user'], c['password'])
+col_mgr = etebase.get_collection_manager()
+print({col.uid: col.meta
+      for col in col_mgr.list("etebase.vevent").data})
+```
 
 ## Recurring events and default search period
 

@@ -1,30 +1,26 @@
 #!/usr/bin/env python
 
-# this is part of the etesync 1.0 backend
-# for etesync 2.0 backend see etebase_interface.py
+# this is part of the etesync 2.0 backend
+# for etesync 1.0 backend see etesync_interface.py
 
-from icalcli.etesync_backend.etesync_crud import EtesyncCRUD
+from icalcli.etesync_backend.etebase_crud import EtebaseCRUD
 from icalendar import Calendar
 
 
-# The EtesyncInterface class is basically a wrapper around the
-# EtesyncCRUD class from which it is derived
+# The EtebaseInterface class is basically a wrapper around the
+# EtebaseCRUD class from which it is derived
 # The CRUD operations (Create, Retrieve, Update and Delete)
-# work with icalendar events (VEVENT). These are converted to
-# ics calendar strings and EtesyncCRUD methods are called with
-# these strings as argument.
+# work with icalendar events (VEVENT). While calling EtebaseCRUD methods,
+# both inputs and return values are converted to/from
+# ics calendar bytes/strings
 
-# The class is initialized with user details, authToken and
-# EITHER the encryption password OR the cipher key.
+# The class is initialized with user details and credentials.
 
 # Intended usage is that a calling program obtains user credentials
 # from terminal input or some secure storage (like a key ring)
-# and then creates an instance of EtesyncCRUD as follows:
+# and then creates an instance of EtebaseCRUD as follows:
 
-# # call with cipher key
-# etes = EtesyncInterface(email, None, remoteUrl, uid, authToken, cipher_key)
-# # call with encryption password
-# etes = EtesyncInterface(email, userPassword, remoteUrl, uid, authToken, None)
+# etes = EtebaseInterface(user, server_url, password, calendar_uid)
 
 # The calling program can then perform CRUD operations by calling
 # etes.create_event, etes.retrieve_event,
@@ -37,27 +33,24 @@ from icalendar import Calendar
 # No exception handling is done. That is left to the calling program.
 
 
-class EtesyncInterface (EtesyncCRUD):
-    def __init__(self, email, userPassword, remoteUrl, uid, authToken,
-                 cipher_key=None, silent=True):
-        r"""Initialize EtesyncInterface
+class EtebaseInterface (EtebaseCRUD):
+    def __init__(self, user, server_url, password, calendar_uid, silent=True):
+        r"""Initialize EtebaseInterface
 
         Parameters
         ----------
-        email : etesync username(email)
-        userPassword : etesync encryption password
-        remoteUrl : url of etesync server
-        uid : uid of calendar (currently only one calendar is supported)
-        authToken : authentication token for etesync server
+        user : etebase username
+        password : etebase password
+        server_url : url of etebase server
+        calendar_uid : uid of calendar
         """
-        super(EtesyncInterface, self).__init__(
-            email, userPassword, remoteUrl,
-            uid, authToken, cipher_key, silent)
+        super(EtebaseInterface, self).__init__(
+            user, server_url, password, calendar_uid, silent)
         self.all_events()
 
     def all_events(self):
         self.events = [Calendar.from_ical(ev).walk('VEVENT')[0]
-                       for ev in EtesyncCRUD.all_events(self)]
+                       for ev in EtebaseCRUD.all_events(self)]
 
     def create_event(self, event, vtimezone=None):
         r"""Create event
@@ -67,7 +60,7 @@ class EtesyncInterface (EtesyncCRUD):
         event : event to be added (iCalendar object)
         """
         ics = self.event_to_ics(event, vtimezone)
-        EtesyncCRUD.create_event(self, ics)
+        EtebaseCRUD.create_event(self, ics)
 
     def update_event(self, event, vtimezone=None):
         r"""Update event
@@ -78,10 +71,10 @@ class EtesyncInterface (EtesyncCRUD):
         """
         uid = event.decoded('uid').decode()
         ics = self.event_to_ics(event, vtimezone)
-        EtesyncCRUD.update_event(self, ics, uid)
+        EtebaseCRUD.update_event(self, ics, uid)
 
     def event_to_ics(self, event, vtimezone=None):
-        r"""Make calendar string (ics) from event
+        r"""Make calendar byte array (ics) from event
 
         Parameters
         ----------
@@ -91,12 +84,11 @@ class EtesyncInterface (EtesyncCRUD):
         cal.add_component(event)
         if vtimezone:
             cal.add_component(vtimezone)
-        ics = cal.to_ical().decode()
+        ics = cal.to_ical()
         return ics
 
     def sync(self, vtimezone=None):
         r"""Sync with server and rebuild vevent list
         """
-        EtesyncCRUD.sync(self)
+        EtebaseCRUD.sync(self)
         self.all_events()
-

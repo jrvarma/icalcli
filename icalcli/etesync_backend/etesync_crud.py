@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+# this is part of the etesync 1.0 backend
+# for etesync 2.0 backend see etebase_crud.py
+
 import etesync as api
 from time import sleep
 
