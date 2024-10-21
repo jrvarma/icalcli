@@ -34,7 +34,8 @@ from icalendar import Calendar
 
 
 class EtebaseInterface (EtebaseCRUD):
-    def __init__(self, user, server_url, password, calendar_uid, silent=True):
+    def __init__(self, user, server_url, password, calendar_uid,
+                 cache_file=None, silent=True):
         r"""Initialize EtebaseInterface
 
         Parameters
@@ -45,12 +46,14 @@ class EtebaseInterface (EtebaseCRUD):
         calendar_uid : uid of calendar
         """
         super(EtebaseInterface, self).__init__(
-            user, server_url, password, calendar_uid, silent)
+            user=user, server_url=server_url, password=password,
+            calendar_uid=calendar_uid, cache_file=cache_file, silent=silent)
+        print("Parsing all events")
         self.all_events()
 
     def all_events(self):
         self.events = [Calendar.from_ical(ev).walk('VEVENT')[0]
-                       for ev in EtebaseCRUD.all_events(self)]
+                       for ev in self.raw_events]
 
     def create_event(self, event, vtimezone=None):
         r"""Create event

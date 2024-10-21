@@ -3,8 +3,9 @@
 # this is part of the etesync 2.0 backend
 # for etesync 1.0 backend see etesync_crud.py
 
-from etebase import Client, Account, FetchOptions
+from etebase import Client, Account, FetchOptions, Base64Url
 from time import sleep, time
+import json
 
 # The EtesyncCRUD class exposes methods for each of the CRUD operations
 # (Create, Retrieve, Update and Delete) and for sync with the server.
@@ -31,9 +32,9 @@ from time import sleep, time
 
 
 class EtebaseCRUD:
-    sync_after_edit = False  # add/update/delete are on server not on cache
 
-    def __init__(self, user, server_url, password, calendar_uid, silent=True):
+    def __init__(self, user, server_url, password, calendar_uid,
+                 cache_file=None, silent=True):
         """Initialize
 
         Parameters
@@ -42,13 +43,21 @@ class EtebaseCRUD:
         password : etebase password
         server_url : url of etebase server
         calendar_uid : uid of calendar
+        cache_file: path to the cache file or None
         """
         client = Client(user, server_url)
         etebase = Account.login(client, user, password)
         col_mgr = etebase.get_collection_manager()
         collection = col_mgr.fetch(calendar_uid)
         self.item_mgr = col_mgr.get_item_manager(collection)
+        self.items = {}
+        self.stoken = None
+        self.raw_events = []
+        self.cache_file = cache_file
+        self.load_cache()
         self.sync(silent)
+        print("Reading all events")
+        self.get_all_events()
 
     def create_event(self, event, event_uid):
         """Create event
@@ -77,9 +86,10 @@ class EtebaseCRUD:
         (calendar containing one event to be updated)
         event_uid : uid of event to be updated
         """
-        item = self.item_mgr.fetch(self.item_uid[event_uid])
+        item = self.item_mgr.fetch(self.event_uid_to_item_uid[event_uid])
         assert item.meta['name'] == event_uid
         item.content = event
+        # item.meta["mtime"] = int(round(time() * 1000))
         self.item_mgr.batch([item])
 
     def retrieve_event(self, event_uid):
@@ -93,19 +103,9 @@ class EtebaseCRUD:
         -------
         iCalendar file (as a string)
         """
-        item = self.item_mgr.fetch(self.item_uid[event_uid])
+        item = self.item_mgr.fetch(self.event_uid_to_item_uid[event_uid])
         assert item.meta['name'] == event_uid
         return item.content.decode()
-
-    def all_events(self):
-        """Retrieve all events in calendar
-
-        Returns
-        -------
-        List of iCalendar files (as strings)
-        """
-        self.item_uid = {e.meta['name']: e.uid for e in self.items}
-        return [e.content.decode() for e in self.items if not e.deleted]
 
     def delete_event(self, event_uid):
         """Delete event and sync calendar
@@ -114,10 +114,23 @@ class EtebaseCRUD:
         ----------
         uid : uid of event to be deleted
         """
-        item = self.item_mgr.fetch(self.item_uid[event_uid])
+        item = self.item_mgr.fetch(self.event_uid_to_item_uid[event_uid])
         assert item.meta['name'] == event_uid
+        item.meta["mtime"] = int(round(time() * 1000))
         item.delete()
         self.item_mgr.batch([item])
+
+    def get_all_events(self):
+        """Retrieve all events in calendar
+
+        Returns
+        -------
+        List of iCalendar files (as strings)
+        """
+        self.event_uid_to_item_uid = {
+            e.meta['name']: e.uid for e in self.items.values()}
+        self.raw_events = [e.content.decode()
+                           for e in self.items.values() if not e.deleted]
 
     def sync(self, silent=False):
         """Initialize
@@ -129,25 +142,44 @@ class EtebaseCRUD:
         silent or print("Syncing with server. Please wait")
         msg = "etebase fetch attempt {:} failed. Will retry after {:} seconds"
         delay = 5
-        stoken = None
         done = False
         chunk = 100
-        self.items = []
         for i in range(5):
             try:
                 while not done:
                     items = self.item_mgr.list(
-                        FetchOptions().stoken(stoken).limit(chunk))
-                    self.items += [item for item in items.data]
-                    stoken = items.stoken
+                        FetchOptions().stoken(self.stoken).limit(chunk))
+                    self.items.update(
+                        {item.uid: item for item in items.data})
+                    self.stoken = items.stoken
                     done = items.done
-                    silent or print(".", end='')
+                    # silent or print(".", end='')
                 break
             except Exception:
                 silent or print(msg.format(i+1, delay))
                 sleep(delay)
         if done:
             silent or print("Syncing completed.")
-            self.all_events()
+            self.save_cache()
         else:
             print("Syncing with server failed after 5 attempts")
+        return
+
+    def load_cache(self):
+        if self.cache_file:
+            d = json.load(open(self.cache_file))
+            if 'stoken' in d:
+                self.stoken = d['stoken']
+            if 'blobs' in d:
+                for cache_blob in d['blobs']:
+                    item = self.item_mgr.cache_load(
+                        Base64Url.from_base64(cache_blob))
+                    self.items[item.uid] = item
+
+    def save_cache(self):
+        if self.cache_file:
+            cache = dict(
+                stoken=self.stoken,
+                blobs=[Base64Url.to_base64(self.item_mgr.cache_save(item))
+                       for item in self.items.values()])
+            json.dump(cache, open(self.cache_file, 'w'))

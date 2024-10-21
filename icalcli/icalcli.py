@@ -1727,9 +1727,9 @@ def repl(ecal=None):
             ecal.backend_interface.sync_after_edit = True
             # The file and etesync 1.0 backends operate on the cache and
             # they sync to server only when sync() is called
-            # The etebase or etesync 2.0 backend works directly on server
-            # and requires sync() only if server updated from another device
-            # EtebaseCRUD has the attribute sync_after_edit = False
+            # Some backends may work directly on server
+            # and may require sync() only if server updated from another device
+            # Such backends can set the attribute sync_after_edit = False
             # If attribute is missing, we assume it is True
         if hasattr(config, 'timezones') and 'tz' in config.timezones:
             IcalendarInterface.calendar_tz = config.timezones['tz']
