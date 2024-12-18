@@ -1455,6 +1455,8 @@ class IcalendarInterface:
             return self.raw_ics(original)
         default_event_duration = timedelta(minutes=30)
         old = None
+        if args.summary:
+            summary = args.summary
         if original:
             # simulate old = original.deepcopy()
             old = Calendar.from_ical(original.to_ical().decode())
@@ -1464,7 +1466,7 @@ class IcalendarInterface:
                 ('duration' in old and old.Decoded('duration')) or
                 (old.Decoded('dtend') - old.Decoded('dtstart')))
             if not args.summary:
-                args.summary = old.Decoded('summary').decode()
+                summary = old.Decoded('summary').decode()
             if (
                     not args.time and not (args.start and 'T' in args.start)
                     and self.isallday(old)
@@ -1478,7 +1480,7 @@ class IcalendarInterface:
                                gethostname())
             # old_start = self.now
             # old_duration = None
-            if not args.summary:
+            if not summary:
                 raise Exception('Summary must be specified')
             day = args.day or self.now.day
             month = args.month or self.now.month + (
@@ -1564,7 +1566,7 @@ class IcalendarInterface:
             add_or_change(event, field, parsed_value)
 
         add_or_change(event, 'last-modified', dtstamp)
-        add_or_change(event, 'summary', args.summary)
+        add_or_change(event, 'summary', summary)
         add_or_change(event, 'dtstart', self.calendar_timezone(start))
         add_or_change(event, 'dtend', self.calendar_timezone(end))
         if args.free:
