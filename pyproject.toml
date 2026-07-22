@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "icalcli"
+version = "1.1.4"
+authors = [
+        {name = "Jayanth R. Varma"}
+]
+maintainers = [
+        {name = "Jayanth R. Varma", email = "jrvarma@gmail.com"}
+]
+description = "Icalendar Calendar Command Line Interface"
+readme = "README.md"
+dependencies = [
+    "python-dateutil",
+    "parsedatetime",
+    "icalendar",
+    "recurring_ical_events"
+]
+license = {text = "OSI Approved :: MIT License"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3"
+]
+requires-python = ">=3.6"
+
+[project.optional-dependencies]
+"parsedatetime"= ["parsedatetime"]
+
+[project.scripts]
+icalcli = "icalcli.icalcli:main"
+
+[project.urls]
+Homepage = "https://github.com/jrvarma/icalcli"
+
+[tool.setuptools]
+packages = ["icalcli", "icalcli.etesync_backend", "icalcli.file_backend"]

@@ -1,3 +1,17 @@
+# 1.1.4 released 2026-07-22
+The `iCalendar` package made a breaking change in version 7. Fixes in 1.1.4 ensure compatibility with both old and new versions of `iCalendar` package. 
+Also replaced `setup.py` with `pyproject.toml`.
+
+# 1.1.3 released 2024-12-18
+Bug fixes 
+
+# 1.1 released 2024-10-18 and
+# 1.1.2 released 2024-10-21
+Added backend for EteSync 2.0 (etebase). 
+
+# 1.0.6 released 2024-05-03
+Bug fixes
+
 # 1.0.5 released 2024-04-17
 
 * Added `cal5w` command to provide current week, two past weeks and two future weeks in a calendar format. 

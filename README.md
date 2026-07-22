@@ -44,7 +44,7 @@ pipx install icalcli
 ```sh
 git clone https://github.com/jrvarma/icalcli.git
 cd icalcli
-python setup.py install
+python -m pip install .
 ```
 
 or via `pipx`:

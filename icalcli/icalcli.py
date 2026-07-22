@@ -72,14 +72,27 @@ NON_RECURRING_EVENTS = 2
 ORIGINAL_OF_RECURRING_EVENTS = 3
 
 
+def decode_if_bytes(string_or_bytes):
+    # Version 7 of iCalendar made a breaking change
+    # The return type of text properties was changed from bytes to string
+    # To work with both old and new versions of iCalendar and to guard
+    # against any future change in the return value of calendar.to_ical()
+    # which still returns bytes, we apply decode only after confirming that
+    # the value is bytes
+    if isinstance(string_or_bytes, bytes):
+        return string_or_bytes.decode()
+    return string_or_bytes
+
+
 def safe_decode(x, field):
     try:
-        return x.decoded(field)
+        result = x.decoded(field)
     except:  # noqa: E722
         print("iCalendar error:", x.errors)
         print("iCalendar could not decode {:} field of \n{:}".format(
-            field, x.to_ical().decode()))
+            field, decode_if_bytes(x.to_ical())))
         raise
+    return decode_if_bytes(result)
 
 
 Event.Decoded = safe_decode
@@ -152,7 +165,7 @@ class IcalendarInterface:
     @staticmethod
     def uid(event):
         """Return uid of event"""
-        return event.Decoded('uid').decode()
+        return event.Decoded('uid')
 
     def check_duplicate_uids(self):
         # fixes https://github.com/jrvarma/icalcli/pull/8#issue-1310596831
@@ -180,7 +193,7 @@ class IcalendarInterface:
             ics_list = []
             for event in self.events:
                 cal.add_component(event)
-            ics_list += [cal.to_ical().decode()]
+            ics_list += [decode_if_bytes(cal.to_ical())]
             self.calendar = Calendar.from_ical("".join(ics_list))
             self.recurring_events = recurring_ical_events.of(
                 self.calendar, keep_recurrence_attributes=True)
@@ -262,8 +275,8 @@ class IcalendarInterface:
         string
         """
         if 'summary' in event and (
-                event.Decoded('summary').decode().strip()):
-            return event.Decoded('summary').decode()
+                event.Decoded('summary').strip()):
+            return event.Decoded('summary')
         else:
             return "(No title)"
 
@@ -374,24 +387,23 @@ class IcalendarInterface:
                     summary += ' AL: ??'
         if self.graphical_outputs.get('freebusy'):
             free = ('transp' in event and
-                    event.Decoded('transp').decode() == 'TRANSPARENT')
+                    event.Decoded('transp') == 'TRANSPARENT')
             summary += (' free ' if free else ' busy ')
         if (
                 self.graphical_outputs.get('location')
                 and 'location' in event
-                and event.Decoded('location').decode().strip()
+                and event.Decoded('location').strip()
         ):
-            summary += " [%s]" % (event.Decoded('location').
-                                  decode().strip())
+            summary += " [%s]" % (event.Decoded('location').strip())
         if self.graphical_outputs.get('uid'):
-            summary += " <%s>" % (event.Decoded('uid').decode().strip())
+            summary += " <%s>" % (event.Decoded('uid').strip())
         if (
                 self.graphical_outputs.get('description')
                 and 'description' in event
-                and event.Decoded('description').decode().strip()
+                and event.Decoded('description').strip()
                 and self.outputs.get('description')
         ):
-            summary += event.Decoded('description'). decode().strip()
+            summary += event.Decoded('description').strip()
         return summary
 
     def get_week_events(self, start_dt, end_dt, event_list):
@@ -878,7 +890,7 @@ class IcalendarInterface:
                 self.printer.msg(' '*7)
         if self.outputs.get('freebusy'):
             free = ('transp' in event and
-                    event.Decoded('transp').decode() == 'TRANSPARENT')
+                    event.Decoded('transp') == 'TRANSPARENT')
             self.printer.msg(' free ' if free else ' busy ',
                              eventColor)
 
@@ -888,21 +900,20 @@ class IcalendarInterface:
         if (
                 self.outputs.get('location')
                 and 'location' in event
-                and event.Decoded('location').decode().strip()
+                and event.Decoded('location').strip()
         ):
-            xstr = " [%s]" % (event.Decoded('location').
-                              decode().strip())
+            xstr = " [%s]" % (event.Decoded('location').strip())
             self.printer.msg(xstr, 'default')
 
         if self.outputs.get('uid'):
-            xstr = " <%s>" % (event.Decoded('uid').decode().strip())
+            xstr = " <%s>" % (event.Decoded('uid').strip())
             self.printer.msg(xstr, 'default')
 
         self.printer.msg('\n')
 
         if (
                 self.outputs.get('description') and 'description' in event
-                and event.Decoded('description').decode().strip()
+                and event.Decoded('description').strip()
         ):
             descrIndent = outputsIndent + '  '
             box = True  # leave old non-box code for option later
@@ -923,7 +934,7 @@ class IcalendarInterface:
                     outputsIndent,
                     topMarker,
                     formatDescr(event.Decoded('description').
-                                decode().strip(), descrIndent, box),
+                                strip(), descrIndent, box),
                     botMarker
                 )
             else:
@@ -933,7 +944,7 @@ class IcalendarInterface:
                     outputsIndent,
                     marker,
                     formatDescr(event.Decoded('description').
-                                decode().strip(), descrIndent, box),
+                                strip(), descrIndent, box),
                     marker
                 )
             self.printer.msg(xstr, 'default')
@@ -1048,9 +1059,7 @@ class IcalendarInterface:
         elif event.decoded(field, None) is None:
             pat_match = False
         else:
-            s = event[field].to_ical()
-            if isinstance(s, bytes):
-                s = s.decode()
+            s = decode_if_bytes(event[field].to_ical())
             pat_match = (
                 re.search(pattern, s, flags=flags) is not None)
         return date_in_range and pat_match
@@ -1099,7 +1108,7 @@ class IcalendarInterface:
             uids = set(self.uid(e) for e in event_list) & self.recur_uids
             event_list = [e for e in self.events if self.uid(e) in uids]
         event_list.sort(key=lambda x: (self.decode_dtm(x, 'dtstart'),
-                                       x.Decoded('summary').decode()))
+                                       x.Decoded('summary')))
         return event_list
 
     def save_last_search_spec(self, start, end, search=None, field='summary'):
@@ -1408,7 +1417,7 @@ class IcalendarInterface:
                 for event in event_list:
                     self.iterate_events(None, [event], print_count=False,
                                         ev_type=ev_type)
-                    self.printer.msg(event.to_ical().decode() + '\n')
+                    self.printer.msg(decode_if_bytes(event.to_ical()) + '\n')
                     if ev_type == ORIGINAL_OF_RECURRING_EVENTS:
                         self.printer.msg(warn_recur)
                     args = self.read_edit_args()
@@ -1459,14 +1468,14 @@ class IcalendarInterface:
             summary = args.summary
         if original:
             # simulate old = original.deepcopy()
-            old = Calendar.from_ical(original.to_ical().decode())
-            uid = old.Decoded('uid').decode()
+            old = Calendar.from_ical(decode_if_bytes(original.to_ical()))
+            uid = old.Decoded('uid')
             old_start = self.display_timezone(old.Decoded('dtstart'))
             old_duration = (
                 ('duration' in old and old.Decoded('duration')) or
                 (old.Decoded('dtend') - old.Decoded('dtstart')))
             if not args.summary:
-                summary = old.Decoded('summary').decode()
+                summary = old.Decoded('summary')
             if (
                     not args.time and not (args.start and 'T' in args.start)
                     and self.isallday(old)
@@ -1551,7 +1560,7 @@ class IcalendarInterface:
             event = old
         else:
             s = re.sub(r'BEGIN:VALARM.*END:VALARM\s*', '',
-                       old.to_ical().decode(), flags=re.DOTALL)
+                       decode_if_bytes(old.to_ical()), flags=re.DOTALL)
             event = Calendar.from_ical(s)
 
         def add_or_change(event, field, value):
@@ -1592,7 +1601,7 @@ class IcalendarInterface:
         if not args.no_prompt:
             self.printer.msg("{:} Event Details\n".format(
                 "Edited" if old else "New"))
-            self.printer.msg(event.to_ical().decode())
+            self.printer.msg(decode_if_bytes(event.to_ical()))
             if is_recurring_event:
                 self.preview_recurring_event(event)
             else:
@@ -1615,7 +1624,7 @@ class IcalendarInterface:
 
     def raw_ics(self, original=None):
         if original:
-            uid = original.Decoded('uid').decode()
+            uid = original.Decoded('uid')
         else:
             uid = "%s (%s)" % (datetime.now().isoformat(),
                                gethostname())
@@ -1633,7 +1642,7 @@ class IcalendarInterface:
         if event.errors:
             self.printer.err_msg("iCalendar could not parse raw ICS")
             raise Exception(str(event.errors))
-        out = event.to_ical().decode()
+        out = decode_if_bytes(event.to_ical())
 
         def lines(s):
             return ("\n".join(s.splitlines())).splitlines(keepends=True)
@@ -1648,7 +1657,7 @@ class IcalendarInterface:
                 self.printer.msg("Action cancelled\n")
                 return False
         if 'uid' in event:
-            new_uid = event.decoded('uid').decode()
+            new_uid = event.decoded('uid')
             if original and new_uid != uid:
                 raise 'UID cannot be changed. Delete event and add new event'
             else:
