@@ -6,7 +6,6 @@
 from icalcli.etesync_backend.etesync_crud import EtesyncCRUD
 from icalendar import Calendar
 
-
 # The EtesyncInterface class is basically a wrapper around the
 # EtesyncCRUD class from which it is derived
 # The CRUD operations (Create, Retrieve, Update and Delete)
@@ -35,6 +34,18 @@ from icalendar import Calendar
 # (b) after any CRUD operation other than Retrieve
 
 # No exception handling is done. That is left to the calling program.
+
+
+def decode_if_bytes(string_or_bytes):
+    # Version 7 of iCalendar made a breaking change
+    # The return type of text properties was changed from bytes to string
+    # To work with both old and new versions of iCalendar and to guard
+    # against any future change in the return value of calendar.to_ical()
+    # which still returns bytes, we apply decode only after confirming that
+    # the value is bytes
+    if isinstance(string_or_bytes, bytes):
+        return string_or_bytes.decode()
+    return string_or_bytes
 
 
 class EtesyncInterface (EtesyncCRUD):
@@ -76,7 +87,7 @@ class EtesyncInterface (EtesyncCRUD):
         ----------
         event : event to be added (iCalendar object)
         """
-        uid = event.decoded('uid').decode()
+        uid = decode_if_bytes(event.decoded('uid'))
         ics = self.event_to_ics(event, vtimezone)
         EtesyncCRUD.update_event(self, ics, uid)
 
@@ -91,7 +102,7 @@ class EtesyncInterface (EtesyncCRUD):
         cal.add_component(event)
         if vtimezone:
             cal.add_component(vtimezone)
-        ics = cal.to_ical().decode()
+        ics = decode_if_bytes(cal.to_ical())
         return ics
 
     def sync(self, vtimezone=None):
@@ -99,4 +110,3 @@ class EtesyncInterface (EtesyncCRUD):
         """
         EtesyncCRUD.sync(self)
         self.all_events()
-

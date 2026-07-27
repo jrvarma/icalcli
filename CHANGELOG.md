@@ -1,3 +1,6 @@
+# 1.1.5 released 2026-07-27
+Fixed a bug in 1.1.4
+
 # 1.1.4 released 2026-07-22
 The `iCalendar` package made a breaking change in version 7. Fixes in 1.1.4 ensure compatibility with both old and new versions of `iCalendar` package. 
 Also replaced `setup.py` with `pyproject.toml`.
