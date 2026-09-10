@@ -1,3 +1,6 @@
+# 1.1.6 released 2026-09-10
+Fixed a version mismatch in __init__.py
+
 # 1.1.5 released 2026-07-27
 Fixed a bug in 1.1.4
 
