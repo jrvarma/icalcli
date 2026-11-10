@@ -19,7 +19,7 @@ class ICSInterface:
             self.filepaths = [Path(filename).resolve()]
             self.readonly = False
         self.backup = backup
-        self.ics = []
+        self.ics = ""
         self.all_events()
 
     def all_events(self):
@@ -34,6 +34,15 @@ class ICSInterface:
         self.cache_events = {}
         filecount = 0
         for path in self.filepaths:
+            if not path.exists():
+                # A single writable calendar file that does not exist yet
+                # starts out empty (it is created on the first sync), so a
+                # first run just works. Anything else is likely a typo.
+                if len(self.filepaths) == 1 and path.parent.is_dir():
+                    filecount += 1
+                    continue
+                raise FileNotFoundError(
+                    "Calendar file not found: {}".format(path))
             with open(path, 'r') as fp:
                 cal = Calendar.from_ical(fp.read())
             events = [ev for ev in cal.walk('VEVENT') if check_event(ev)]
